@@ -1073,6 +1073,24 @@ try:
             del sys.argv[_idx:_idx+2]
         except: pass
 
+    # === CLEANUP OLD EXE (SELF-DELETION HANDLER) ===
+    # This replaces the vulnerable shell-based self-deletion.
+    # The new process receives the path of the old executable and deletes it after a delay.
+    if "--cleanup-old-exe" in sys.argv:
+        try:
+            _idx = sys.argv.index("--cleanup-old-exe")
+            _old_exe = sys.argv[_idx + 1]
+            def _deferred_delete(path):
+                time.sleep(3)
+                for _ in range(5):
+                    try:
+                        if os.path.exists(path): os.remove(path)
+                        break
+                    except: time.sleep(1)
+            threading.Thread(target=_deferred_delete, args=(_old_exe,), daemon=True).start()
+            del sys.argv[_idx:_idx+2]
+        except: pass
+
     # Global defer
     dns_manager = None
 
