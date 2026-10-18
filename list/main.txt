@@ -155,9 +155,14 @@ kinozal.tv
 laozhang.ai
 litellm.ai
 live-video.net
+wispbyte.com
 live.com
 llimonix.dev
 llimonix.pw
+mqcdn.com
+mapq.st
+hereapi.com
+netify.ai
 lostfilm.tv
 lumalabs.ai
 mangamirai.com
@@ -165,6 +170,7 @@ mate.tools
 matrix.org
 mcpmarket.com
 media-amazon.com
+ssl-images-amazon.com
 meduza.io
 meet.google.com
 meshworld.in
@@ -205,7 +211,10 @@ tiqcdn.com
 amplience.net
 adis.ws
 evidon.com
+amazon-adsystem.com
 global.canon
+scorecardresearch.com
+amazon.com
 nowpayments.io
 ntfy.sh
 obmen.one
@@ -213,6 +222,10 @@ obsproject.com
 ohi-s.com
 on.aws
 taobao.com
+adjust.com
+adjust.world
+aeza.net
+aeza.ru
 alicdn.com
 qwen.ai
 qwenlm.ai

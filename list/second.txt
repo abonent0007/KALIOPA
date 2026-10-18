@@ -80,10 +80,16 @@ nitter.net
 notebooklm.google.com
 notion.com
 notion.so
+mapquest.com
 ntc.party
+playground.google
+chromewebstore.google.com
+gemini.google
 nxp.com
 oaistatic.com
 oaiusercontent.com
+okta.com
+oktacdn.com
 onlinesim.io
 openai.com
 tokenharbor.ai

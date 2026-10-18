@@ -1,0 +1,41 @@
+# Third-party binaries and local build assets (not in upstream)
+/bin/
+/icon.ico
+/temp/
+/build/
+/dist/
+/work/
+/resources/pyruntime/
+
+# Local runtime profiles, keys and account data.
+# Profile/list updates stay stock and are managed by the app's remote sources.
+/profiles/
+/tgrelay/*.key
+/awg/*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Rust
+/nova-rs/target/
+
+# Go helper build outputs
+/nova-go/*.exe
+/nova-xray/*.exe
+
+# Logs and local state
+*.log
+*.pid
+
+# Agent metadata
+/.opencode/
+
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

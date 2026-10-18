@@ -169,7 +169,7 @@ NON_EMPTY_DIRS = ("bin", "fake", "ip", "list", "strat")
 # code is dead in a frozen build - it just follows `import pip` and bundles the
 # installer machinery. None of these are reachable at runtime.
 PYI_EXCLUDED_MODULES = (
-    "pip", "ensurepip", "setuptools", "pkg_resources", "distutils",
+    "pip", "ensurepip", "setuptools", "pkg_resources",
     # Pulled in transitively by developer tooling in the build environment.
     "paramiko", "bcrypt", "nacl",
     # Never imported by Nova; excluded so a fat build environment cannot leak in.
