@@ -122,7 +122,8 @@ Cloudflare-IP fallback → foreign-default (наш патч, по умолчан
   и merge/rebase в `personal`.
 - Источники списков и профилей остаются стоковыми: не менять `nova_list_sync`, `nova_proton`,
   `nova_subscriptions`, `nova_issuance` и адреса ресурсов обновления.
-- `profiles/`, `bin/`, `temp/`, `.opencode/`, сборки и секреты не коммитятся (`.gitignore`).
+- Локальные профили (кроме стокового `profiles/AWG Proton/proton_nodes.json`), `bin/`, `temp/`,
+  `.opencode/`, сборки и секреты не коммитятся (`.gitignore`).
 - Сборка — в `C:\Users\User\Documents\build`.
 
 ## Границы
