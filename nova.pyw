@@ -8951,14 +8951,13 @@ try:
                             f'    if (matchDomain({_list_name}, host)) return "{_route}";\n'
                         )
 
-                # Зарубежный трафик, не попавший ни в один список. По умолчанию — DIRECT
-                # (на прямом пути им занимается winws-стратегия). Включение
-                # NOVA_PAC_FOREIGN_VPN_DEFAULT=1 (или "foreign_default":"vpn" в настройках
-                # PAC) шлёт весь такой трафик через слоты VPN: осознанный размен
-                # скорости и лимитов WARP/Opera на другой маршрут.
+                # Зарубежный трафик, не попавший ни в один список. По умолчанию — VPN
+                # (WARP/MASQUE/VLESS, затем резервные слоты). NOVA_PAC_FOREIGN_VPN_DEFAULT=0
+                # или "foreign_default":"direct" в настройках PAC возвращают прежний DIRECT
+                # (на прямом пути им занимается winws-стратегия).
                 foreign_default = str(pac_config.get("foreign_default") or "").strip().lower()
                 if not foreign_default:
-                    foreign_default = "vpn" if _env_bool_global("NOVA_PAC_FOREIGN_VPN_DEFAULT", False) else "direct"
+                    foreign_default = "vpn" if _env_bool_global("NOVA_PAC_FOREIGN_VPN_DEFAULT", True) else "direct"
                 foreign_default_route = ru_route if foreign_default == "vpn" else "DIRECT"
 
                 pac_content = f"""
@@ -9167,11 +9166,10 @@ var ai_region_direct = {ai_region_direct_js};
     if (matchDomain(user_eu, host)) return "{eu_route}";
     if (matchDomain(eu_over_exclude, host)) return "{eu_route}";
     if (matchDomain(exclude, host)) return "DIRECT";
-{app_domain_priority}    // *.ru: прямой путь всегда (winws применяется и на нём).
-    // Явные пользовательские списки (user_direct/user_ru/user_eu) и режимы
-    // приложений выше — они перебивают правило, если человек выбрал иное.
+    // *.ru: прямой путь всегда (winws применяется и на нём).
+    // Пользовательские списки выше могут перебить правило, если человек выбрал иное.
     if (host === "ru" || host.slice(-3) === ".ru") return "DIRECT";
-{ai_unlock_guard}    if (matchDomain(eu, host)) return "{eu_route}";
+{app_domain_priority}{ai_unlock_guard}    if (matchDomain(eu, host)) return "{eu_route}";
     if (matchDomain(youtube, host)) return "{youtube_route}";
     if (matchDomain(ru, host)) return "{ru_route}";
     if (matchDomain(discord, host)) return "{discord_route}";

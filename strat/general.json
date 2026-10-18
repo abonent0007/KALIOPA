@@ -683,6 +683,62 @@
                 "--dpi-desync-repeats=6",
                 "--dpi-desync-fake-quic=fake/quic_initial_www_google_com.bin"
             ]
+        },
+        {
+            "name": "general_GOOG_RNDSNI",
+            "args": [
+                "--filter-tcp=80,443",
+                "--dpi-desync=multidisorder",
+                "--dpi-desync-fake-tls-mod=rnd,rndsni,padencap",
+                "--dpi-desync-hostfakesplit-mod=host=www.google.com,altorder=1",
+                "--dpi-desync-fooling=ts,badseq",
+                "--dpi-desync-split-seqovl=1",
+                "--dpi-desync-fake-tls=fake/tls_clienthello_www_google_com.bin",
+                "--dpi-desync-autottl=1",
+                "--dpi-desync-ttl=7",
+                "--new",
+                "--filter-udp=443",
+                "--dpi-desync=fake",
+                "--dpi-desync-repeats=6",
+                "--dpi-desync-fake-quic=fake/quic_initial_www_google_com.bin"
+            ]
+        },
+        {
+            "name": "general_GOOG_SNIEXT",
+            "args": [
+                "--filter-tcp=80,443",
+                "--dpi-desync=multidisorder",
+                "--dpi-desync-split-seqovl=1",
+                "--dpi-desync-split-pos=sniext",
+                "--dpi-desync-fooling=ts,badseq",
+                "--dpi-desync-fake-tls=fake/tls_clienthello_www_google_com.bin",
+                "--dpi-desync-autottl=1",
+                "--dpi-desync-ttl=7",
+                "--new",
+                "--filter-udp=443",
+                "--dpi-desync=fake",
+                "--dpi-desync-repeats=6",
+                "--dpi-desync-fake-quic=fake/quic_initial_www_google_com.bin"
+            ]
+        },
+        {
+            "name": "general_VK_KYBER",
+            "args": [
+                "--filter-tcp=80,443",
+                "--dpi-desync=multidisorder",
+                "--dpi-desync-fake-tls-mod=dupsid",
+                "--dpi-desync-hostfakesplit-mod=host=vk.com,altorder=1",
+                "--dpi-desync-fooling=badseq,ts",
+                "--dpi-desync-split-seqovl=1",
+                "--dpi-desync-fake-tls=fake/tls_clienthello_vk_com_kyber.bin",
+                "--dpi-desync-autottl=1",
+                "--dpi-desync-ttl=7",
+                "--new",
+                "--filter-udp=443",
+                "--dpi-desync=fake",
+                "--dpi-desync-repeats=6",
+                "--dpi-desync-fake-quic=fake/quic_initial_vk_com.bin"
+            ]
         }
     ]
 }

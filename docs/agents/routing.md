@@ -16,8 +16,8 @@
 4. `user_ru` → RU-маршрут (VPN), `user_eu` → EU-маршрут (зарубежный выход).
 5. `eu_over_exclude` → EU-маршрут (перебивает exclude).
 6. `exclude` → DIRECT.
-7. Явно выбранные режимы приложений (discord/telegram/whatsapp ≠ auto) → их маршрут.
-8. **`*.ru → DIRECT`** — локальный патч (см. «Локальные модификации»).
+7. **`*.ru → DIRECT`** — локальный патч (пользовательские списки выше могут перебить).
+8. Явно выбранные режимы приложений (discord/telegram/whatsapp ≠ auto) → их маршрут.
 9. AI-ветки: `ai_second` → вторичный слот или DIRECT; `ai_region_direct` → DIRECT;
    `ai_unlock` (если нет ни одного зарубежного выхода) → DIRECT для пересечения с `eu`.
 10. `eu` (second.txt) → EU-маршрут.
@@ -26,8 +26,9 @@
 13. `discord`, `telegram`, `whatsapp` → свои маршруты; Telegram-релей 1372 перебивает
     маршрут только в режиме auto.
 14. Cloudflare-IP fallback: домен без совпадений, чей IP в `ip/cloudflare.txt`, → RU-маршрут.
-15. **`foreign_default_route`** — локальный патч: по умолчанию `DIRECT`, при
-    `NOVA_PAC_FOREIGN_VPN_DEFAULT=1` / `"foreign_default":"vpn"` — RU-маршрут (VPN).
+15. **`foreign_default_route`** — локальный патч форка: по умолчанию **VPN** (RU-маршрут:
+    WARP/MASQUE/VLESS → резервные слоты). `NOVA_PAC_FOREIGN_VPN_DEFAULT=0` /
+    `"foreign_default":"direct"` возвращают прежний DIRECT.
 
 WinINET/WinHTTP используют `FindProxyForURLEx` (та же логика, но без SOCKS5-токенов).
 
