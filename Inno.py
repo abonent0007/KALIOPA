@@ -264,7 +264,9 @@ def copytree_filtered(src: Path, dst: Path) -> None:
     if not src.exists():
         raise RuntimeError(f"Source path is missing: {src}")
     safe_rmtree(dst)
-    shutil.copytree(src, dst, ignore=shutil.ignore_patterns(*IGNORED_PATTERNS))
+    shutil.copytree(
+        src, dst, ignore=shutil.ignore_patterns(*IGNORED_PATTERNS), dirs_exist_ok=True
+    )
 
 
 def is_shippable_profile_path(rel_path: str) -> bool:
@@ -1622,8 +1624,14 @@ def build_pyinstaller_dist(base_dir: Path, release_dir: Path) -> Path:
     sanitize_user_override_files(staging_dir)
 
     routing_settings_src = base_dir / "routing_settings.json"
+    routing_settings_dst = staging_dir / "routing_settings.json"
     if routing_settings_src.exists():
-        stage_routing_settings(routing_settings_src, staging_dir / "routing_settings.json")
+        stage_routing_settings(routing_settings_src, routing_settings_dst)
+    else:
+        routing_settings_dst.write_text(
+            json.dumps({"version": version, "opera_region": "EU"}, ensure_ascii=False, indent=4),
+            encoding="utf-8",
+        )
 
     # Strip unnecessary Python packaging artifacts from staging
     for pattern in ("setuptools", "setuptools-*"):

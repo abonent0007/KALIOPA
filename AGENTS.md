@@ -85,7 +85,9 @@ Cloudflare-IP fallback → foreign-default (наш патч, по умолчан
 
 1. **PAC `*.ru → DIRECT`** + опция `foreign_default` (`nova.pyw`, `generate_pac`).
 2. **`Inno.py`: `distutils` удалён из `PYI_EXCLUDED_MODULES`** (баг PyInstaller 6.19 на Python 3.14).
-3. Рабочие артефакты сборки: `bin/` (из установки), доп. `profiles/`, `icon.ico`. Не коммитить.
+3. **`Inno.py`: повторная сборка в существующий staging** (`dirs_exist_ok=True`) и нейтральный
+   `routing_settings.json` при отсутствии источника — иначе clean build падает на копировании/ISS.
+4. Рабочие артефакты сборки: `bin/` (из установки), доп. `profiles/`, `icon.ico`. Не коммитить.
 
 ## Обновления
 
