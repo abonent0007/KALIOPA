@@ -58,7 +58,7 @@ https://github.com/confeden/Nova (указан в `nova-rs/Cargo.toml`).
 
 | Область | Где |
 |---|---|
-| GUI, PAC, маршрутизация, оркестрация | `nova.pyw` (якоря: `generate_pac` ~8461, `FindProxyForURL` ~8965) |
+| GUI, PAC, маршрутизация, оркестрация | `nova.pyw` (якоря: `generate_pac` ~8461, `FindProxyForURL` ~8964) |
 | Решения транспорта по приложениям | `resources/nova_routing_backends.py` |
 | Цепочки попыток TCP (warp/opera/direct) | `resources/nova_transport_plans.py` |
 | Синхронизация списков | `resources/nova_list_sync.py` |
@@ -92,6 +92,8 @@ Cloudflare-IP fallback → foreign-default (наш патч, по умолчан
 5. **`foreign_default` по умолчанию VPN**: весь не-.ru трафик без совпадений → VPN/прокси;
    `NOVA_PAC_FOREIGN_VPN_DEFAULT=0` / `"foreign_default":"direct"` — откат.
 6. **Seed-стратегии обфускации** в `strat/general.json`: Google TLS/QUIC, `sniext`, VK kyber.
+7. **Security backport** (`nova.pyw`): self-deletion и admin relaunch без `shell=True`
+   (`--cleanup-old-exe`, `subprocess.list2cmdline`).
 
 ## Обновления
 

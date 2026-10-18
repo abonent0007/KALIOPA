@@ -52,8 +52,8 @@
 
 ## Где искать логику (якоря)
 
-- PAC и маршруты: `nova.pyw::generate_pac` (~L8461), шаблон `FindProxyForURL` (~L8954),
-  `FindProxyForURLEx` для WinINET (~L9181).
+- PAC и маршруты: `nova.pyw::generate_pac` (~L8461), шаблон `FindProxyForURL` (~L8964),
+  `FindProxyForURLEx` для WinINET (~L9193).
 - Решения транспорта приложений: `resources/nova_routing_backends.py` (WFP/windivert/relay/singbox).
 - Цепочки TCP-попыток: `resources/nova_transport_plans.py` (warp-socks/opera-http/direct; pinned egress Telegram).
 - Списки: `resources/nova_list_sync.py` (`sync_from_network`, `raw_url`, `mirror_urls`).
