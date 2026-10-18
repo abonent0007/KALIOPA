@@ -1,0 +1,76 @@
+opencode_execution_report:
+  status: "PARTIAL_SUCCESS"
+  project:
+    language: "Python 3.14, Rust 2024 (1.94), Go 1.27, Kotlin/Android"
+    entry_point: "nova.pyw"
+    build_command: "NOVA_SKIP_LIST_SYNC=1 NOVA_SKIP_NOVA_XRAY=1 NOVA_KEEP_STAGING=1 python314 Inno.py"
+  baseline:
+    file: "baseline.json"
+    scenarios_captured: 7
+  audit:
+    hardcode_found: 5
+    logic_gaps_found: 10
+    severity_breakdown: {P0: 0, P1: 5, P2: 5, P3: 5}
+  changes:
+    stubs_replaced:
+      - id: "HARD-001"
+        file: "NovaWFP/README.md"
+        line: 73
+        removed: "D:\\Desktop\\nova\\temp\\..."
+        implemented_solution: "<app>\\temp\\..."
+        fallback: "n/a (documentation)"
+        update_mechanism: "n/a"
+      - id: "HARD-002"
+        file: "nova-go/go.mod"
+        line: 6
+        removed: "D:/Documents/Coding/Nova PC"
+        implemented_solution: "<repo>"
+        fallback: "n/a (comment)"
+        update_mechanism: "n/a"
+    logic_gaps_closed:
+      - id: "GAP-001"
+        file: "Inno.py"
+        line: 255
+        description: "safe_rmtree silently ignored removal failures"
+        added_elements: ["error_handler"]
+      - id: "GAP-002"
+        file: "Inno.py"
+        line: 267
+        description: "rebuild failed when staging already existed"
+        added_elements: ["fallback"]
+      - id: "GAP-003"
+        file: "Inno.py"
+        line: 1626
+        description: "clean build failed without routing_settings.json"
+        added_elements: ["fallback"]
+      - id: "GAP-004"
+        file: "nova.pyw"
+        line: 1055
+        description: "duplicate cleanup-old-exe handler after security backport"
+        added_elements: ["error_handler"]
+      - id: "GAP-005"
+        file: "nova.pyw"
+        line: 8961
+        description: "deployed PAC lacked .ru rule and used DIRECT fallback"
+        added_elements: ["fallback", "transition"]
+  verification:
+    static_analysis:
+      linter: "NOT_RUN"
+      typechecker: "NOT_RUN"
+    tests:
+      command: "cargo test --workspace && cargo test -p nova-tls --features shape"
+      total: 791
+      passed: 791
+      failed: 0
+      not_run: 0
+      failure_reasons: []
+    baseline_comparison:
+      scenarios: 7
+      matched: 5
+      mismatched: 2
+    diff_scan:
+      unused_imports: 0
+      missing_error_handling: 0
+      public_api_changes: 0
+  rollbacks: []
+  summary: "Новый exe собран и live-проверен: .ru -> DIRECT, остальное -> VPN/прокси; Rust/Go/Android/PC сборки зелёные. Python-линтер/типчекер в проекте не настроены (NOT_RUN); остаются живые замеры seed-стратегий и стабильность 1371."

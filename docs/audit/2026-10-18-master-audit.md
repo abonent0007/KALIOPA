@@ -56,7 +56,7 @@ post-build снимок нового staging-билда.
 - Live нового build: PAC 31 483 байта, `*.ru direct rule: OK`, финальный маршрут
   `SOCKS5 127.0.0.1:1370; PROXY 127.0.0.1:1371`; порты 1369/1370/1371/1372/1374 open;
   1370/1371 gstatic 204; direct `ya.ru` 302; direct `google.com` 204.
-- Baseline vs post-build: 6 сценариев, 4 совпали, 2 изменения намеренные
+- Baseline vs post-build: 7 сценариев, 5 совпали, 2 изменения намеренные
   (`*.ru` и fallback VPN/прокси).
 
 ## Изменения
