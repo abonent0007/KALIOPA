@@ -9,7 +9,10 @@
 
 # Local runtime profiles, keys and account data.
 # Profile/list updates stay stock and are managed by the app's remote sources.
-/profiles/
+/profiles/*
+!/profiles/AWG Proton/
+/profiles/AWG Proton/*
+!/profiles/AWG Proton/proton_nodes.json
 /tgrelay/*.key
 /awg/*.key
 
