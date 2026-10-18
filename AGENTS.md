@@ -30,6 +30,8 @@ https://github.com/confeden/Nova (указан в `nova-rs/Cargo.toml`).
 
 - Полный установщик: `py Inno.py` — требует Python 3.14 + PyInstaller, Go 1.26, Inno Setup 6,
   сестринский репозиторий `Nova Android` (для `replace` в go.mod), `bin/`, `profiles/`.
+- Android-форк: `C:\Users\User\Documents\Nova-Android-Fork`; для `replace` создан junction
+  `C:\Users\User\Documents\Nova Android`. Зависимости Go — `tools/deps/fetch_go_deps.sh` в Android-форке.
 - Только staging (без установщика): те же шаги, но с env-флагами
   `NOVA_SKIP_NOVA_GO=1 NOVA_SKIP_NOVA_XRAY=1 NOVA_SKIP_NOVA_ENGINE=1 NOVA_SKIP_TLS_TERMINATOR=1 NOVA_SKIP_LIST_SYNC=1`,
   запуск через Python 3.14:
