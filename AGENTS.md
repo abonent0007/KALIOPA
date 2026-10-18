@@ -99,7 +99,8 @@ Cloudflare-IP fallback → foreign-default (наш патч, по умолчан
 
 - Списки: `nova_list_sync.sync_from_network` — `manifest.json` + sha256 из `confeden/nova_updates/nova_pc`
   через зеркала (raw.githack, raw.githubusercontent, jsdelivr) и прокси; выполняется при старте
-  установленной сборки. Принудительное обновление из checkout: см. отчётный скрипт/`list_publish.py`.
+  установленной сборки. В личном форке обновлять через `nova_list_sync`; **не запускать
+  `list_publish.py`** — он коммитит и пушит списки в `confeden/nova_updates`.
 - Профили: Proton issuance (`nova_proton/nova_issuance`), подписки (`nova_subscriptions`).
   Ключи `tgrelay/cf_ws.key` и `awg/opera_relay.key` намеренно отсутствуют upstream (инфраструктура автора).
 

@@ -37,6 +37,10 @@ $env:NOVA_SKIP_LIST_SYNC="1"
 `build_pyinstaller_dist` → staging профилей по белому списку → builtin-копии списков →
 копирование python-рантайма для хелперов → рендер `NovaInstaller.generated.iss` → ISCC.
 
+В личном форке перед полной сборкой обязателен `NOVA_SKIP_LIST_SYNC=1`: иначе `Inno.py`
+вызывает `list_publish.publish_lists`, который коммитит и пушит списки в
+`confeden/nova_updates`.
+
 ## Известные грабли
 
 1. **PyInstaller 6.19 + Python 3.14:** `distutils` в `--exclude-module` вызывает

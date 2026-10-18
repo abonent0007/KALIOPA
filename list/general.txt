@@ -31508,18 +31508,6 @@ kwiki.ru
 kwiz-abcpartner.ru
 kwk-electro.ru
 kwr.kz
-kws1-1.nova-app.eu
-kws1.nova-app.eu
-kws2-1.nova-app.eu
-kws2.nova-app.eu
-kws203-1.nova-app.eu
-kws203.nova-app.eu
-kws3-1.nova-app.eu
-kws3.nova-app.eu
-kws4-1.nova-app.eu
-kws4.nova-app.eu
-kws5-1.nova-app.eu
-kws5.nova-app.eu
 kx7pokerdom.com
 kxcdn.com
 kxk.ru
@@ -40337,7 +40325,6 @@ nov-krs.ru
 nov-med.ru
 nov-ozera.ru
 nov-tel.ru
-nova-app.eu
 nova-award.com
 nova-gain.com
 nova-globextra.com
