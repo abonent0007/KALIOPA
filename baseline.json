@@ -1,0 +1,47 @@
+{
+    "captured_at": "2026-10-18T22:12:00+03:00",
+    "project": "Nova PC",
+    "version": "1.43.2",
+    "baseline_build": "old running build (pre-relaunch)",
+    "note": "Ports were open while the old build was running; it was closed before the new staging build was launched.",
+    "scenarios": {
+        "pac_fetch": {
+            "bytes": 30901,
+            "ru_direct_rule": false,
+            "final_route": "DIRECT"
+        },
+        "ports": {
+            "1369": true,
+            "1370": true,
+            "1371": true,
+            "1372": true,
+            "1374": true
+        },
+        "socks_1370_gstatic": 204,
+        "http_1371_gstatic": 204,
+        "direct_ya_ru": 302,
+        "direct_google": 204
+    },
+    "post_build": {
+        "captured_at": "2026-10-18T22:16:30+03:00",
+        "build": "C:\\Users\\User\\Documents\\build\\Inno\\v1.43.2\\Nova\\Nova.exe (22:14:26)",
+        "pac_bytes": 31483,
+        "ru_direct_rule": true,
+        "final_route": "SOCKS5 127.0.0.1:1370; PROXY 127.0.0.1:1371",
+        "ports": {
+            "1369": true,
+            "1370": true,
+            "1371": true,
+            "1372": true,
+            "1374": true
+        },
+        "socks_1370_gstatic": 204,
+        "http_1371_gstatic": 204,
+        "direct_ya_ru": 302,
+        "direct_google": 204
+    },
+    "intentional_changes": [
+        "*.ru goes DIRECT before explicit application modes",
+        "non-.ru fallback now uses the VPN/proxy chain instead of DIRECT"
+    ]
+}
