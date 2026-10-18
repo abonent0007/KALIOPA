@@ -70,7 +70,7 @@ The observer can still be started manually:
 
 Default observer log file:
 
-`D:\Desktop\nova\temp\NovaWfpObserver.log`
+`<app>\temp\NovaWfpObserver.log`
 
 Current observer filter:
 
@@ -114,9 +114,9 @@ Development note:
 
 ## Current dev tools
 
-- kernel observer log: `D:\Desktop\nova\temp\NovaWfpObserver.log`
-- session log: `D:\Desktop\nova\temp\nova_console.log`
-- TCP proxy log: `D:\Desktop\nova\temp\NovaWfpTcpProxy.log`
+- kernel observer log: `<app>\temp\NovaWfpObserver.log`
+- session log: `<app>\temp\nova_console.log`
+- TCP proxy log: `<app>\temp\NovaWfpTcpProxy.log`
 
 Manual proxy start:
 

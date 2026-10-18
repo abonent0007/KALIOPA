@@ -3,7 +3,7 @@ module nova-pc/nova-go
 go 1.26.3
 
 // The forks below are shared with Nova Android on purpose: one MASQUE/WARP code base, two apps.
-// Paths are relative to this directory: D:/Documents/Coding/Nova PC/nova-go -> ../../Nova Android.
+// Paths are relative to this directory: <repo>/nova-go -> ../../Nova Android.
 replace github.com/Diniboy1123/connect-ip-go => "../../Nova Android/tools/connect-ip-go"
 
 replace github.com/Diniboy1123/usque => "../../Nova Android/build/deps/usque"

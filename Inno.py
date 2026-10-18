@@ -252,7 +252,10 @@ def locate_iscc() -> str | None:
 
 def safe_rmtree(path: Path) -> None:
     if path.exists():
-        shutil.rmtree(path, ignore_errors=True)
+        try:
+            shutil.rmtree(path)
+        except Exception as exc:
+            print(f"[WARN] Failed to remove {path}: {exc}")
 
 
 def ensure_clean_dir(path: Path) -> None:
