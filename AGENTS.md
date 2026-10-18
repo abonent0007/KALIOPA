@@ -36,6 +36,7 @@ https://github.com/confeden/Nova (указан в `nova-rs/Cargo.toml`).
   `NOVA_SKIP_NOVA_GO=1 NOVA_SKIP_NOVA_XRAY=1 NOVA_SKIP_NOVA_ENGINE=1 NOVA_SKIP_TLS_TERMINATOR=1 NOVA_SKIP_LIST_SYNC=1`,
   запуск через Python 3.14:
   `& "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe" Inno.py`.
+  `NOVA_KEEP_STAGING=1` — не удалять staging после сборки установщика.
 - PyInstaller 6.19 + Python 3.14: `distutils` НЕ должен быть в `PYI_EXCLUDED_MODULES`
   (локальный фикс; иначе `ValueError: Target module "distutils" already imported as ExcludedModule`).
 - `bin/` и `icon.ico` в upstream отсутствуют: `bin/` копируется из установки

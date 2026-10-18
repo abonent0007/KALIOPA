@@ -1713,11 +1713,14 @@ def build_installer(base_dir: Path) -> None:
     if not installer_path.exists():
         raise RuntimeError(f"Installer was not created: {installer_path}")
 
-    try:
-        safe_rmtree(staging_dir)
-        print(f"[CLEANUP] Deleted staging folder: {staging_dir}")
-    except Exception as e:
-        print(f"[WARN] Failed to delete staging folder {staging_dir}: {e}")
+    if os.environ.get("NOVA_KEEP_STAGING") == "1":
+        print(f"[INFO] Staging kept: {staging_dir}")
+    else:
+        try:
+            safe_rmtree(staging_dir)
+            print(f"[CLEANUP] Deleted staging folder: {staging_dir}")
+        except Exception as e:
+            print(f"[WARN] Failed to delete staging folder {staging_dir}: {e}")
 
     print(f"[DONE] Installer: {installer_path}")
 
