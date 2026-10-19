@@ -308,6 +308,7 @@ import nova_general_scope
 from nova_relay_env import relay_env_from_settings
 from nova_socks_probe import probe_socks5_payload
 import nova_profiles
+import nova_profile_rotation
 import nova_tk_clipboard
 import nova_warp_generator
 import nova_proton
@@ -1883,6 +1884,16 @@ try:
             self._registration_backoff_until = 0.0
             self._registration_backoff_reason = ""
             self._registration_backoff_notice_ts = 0.0
+            self._profile_rotation_lock = threading.Lock()
+            self._profile_rotation = nova_profile_rotation.ProfileRotationMonitor(
+                get_state=self._profile_rotation_state,
+                rotate=self._rotate_to_profile,
+                log=self.log_func,
+                stop=lambda: bool(globals().get("is_closing", False)),
+                base_dir=get_base_dir(),
+                enabled=_env_bool_global("NOVA_PROFILE_ROTATION", True),
+            )
+            self._profile_rotation.start()
 
         def _is_awg_profile_candidate(self, profile_path):
             try:
@@ -1928,8 +1939,10 @@ try:
                     os.makedirs(self.temp_dir, exist_ok=True)
                 payload["preferred_profile"] = str(profile_name or "").strip()
                 payload["ts"] = time.time()
-                with open(self.awg_profile_state_path, "w", encoding="utf-8") as f:
+                tmp_path = self.awg_profile_state_path + ".tmp"
+                with open(tmp_path, "w", encoding="utf-8") as f:
                     json.dump(payload, f, ensure_ascii=False, indent=2)
+                os.replace(tmp_path, self.awg_profile_state_path)
             except:
                 pass
 
@@ -3791,12 +3804,73 @@ try:
             self._stop_awg_proxy_process(reset_backend=True, force_orphans=True)
             return False
 
+        def _profile_rotation_state(self):
+            base = get_base_dir()
+            active_id = str(
+                getattr(self, "active_profile_id", "")
+                or getattr(self, "awg_active_profile_name", "")
+                or getattr(self, "masque_active_profile_name", "")
+                or getattr(self, "vless_active_profile_name", "")
+                or ""
+            ).strip()
+            record = nova_profile_rotation.find_profile(base, active_id) if active_id else None
+            group = str(record.get("group") or "") if isinstance(record, dict) else ""
+            try:
+                mode = str(nova_profiles.load_selection(base).get("mode") or nova_profiles.MODE_AUTO)
+            except Exception:
+                mode = nova_profiles.MODE_AUTO
+            fail_streak = 0
+            try:
+                stats = nova_profiles.load_stats(base)
+                entry = stats.get(active_id) if isinstance(stats, dict) else None
+                if isinstance(entry, dict):
+                    fail_streak = int(entry.get("fail_streak") or 0)
+            except Exception:
+                pass
+            return {
+                "active_id": active_id,
+                "group": group,
+                "mode": mode,
+                "port": int(getattr(self, "port", 0) or 0),
+                "connected": bool(getattr(self, "is_connected", False)),
+                "starting": bool(getattr(self, "_is_starting_now", False)),
+                "recovering": bool(getattr(self, "_is_recovering_now", False)),
+                "fail_streak": fail_streak,
+            }
+
+        def _rotate_to_profile(self, profile_id, reason):
+            with self._profile_rotation_lock:
+                state = self._profile_rotation_state()
+                if not state.get("connected") or state.get("starting") or state.get("recovering"):
+                    return False
+                if str(state.get("mode") or "") == nova_profiles.MODE_PROFILE:
+                    return False
+                group = str(state.get("group") or "")
+                if group not in nova_profile_rotation.ROTATABLE_GROUPS:
+                    return False
+                if str(state.get("mode") or "") == nova_profiles.MODE_AUTO and \
+                        group not in nova_profile_rotation.ROTATABLE_IN_AUTO:
+                    return False
+                if str(state.get("active_id") or "") == str(profile_id or ""):
+                    return False
+                self._remember_successful_awg_profile(profile_id)
+                self.log_func(
+                    f"[Profiles] Авторотация: {state.get('active_id')} -> {profile_id} ({reason})."
+                )
+                return bool(self.apply_selection_now(f"авторотация: {reason}"))
+
         def apply_selection_now(self, reason=""):
             """Hot-swap the egress to the persisted selection. Runs on the caller's worker thread.
 
             Mirrors the Opera region hot-swap: nothing restarts but this manager, and PAC,
             relays and helpers keep pointing at the same SOCKS port.
             """
+            try:
+                rotation = getattr(self, "_profile_rotation", None)
+                if rotation is not None and not str(reason or "").startswith("авторотация"):
+                    rotation.note_user_action()
+            except Exception:
+                pass
             self._primary_choice_cache = None  # the pill names the new choice at once
             if not self._selection_restart_lock.acquire(blocking=False):
                 # A switch is already running; it re-reads the selection once more at its end,

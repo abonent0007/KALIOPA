@@ -29,10 +29,12 @@ RTT_IMPROVEMENT_FACTOR_FAILING = 0.85
 CANDIDATE_PROBE_COOLDOWN_SEC = 5 * 60.0
 LOG_HOLD_COOLDOWN_SEC = 10 * 60.0
 FAILED_ROTATION_RETRY_SEC = 60.0
+USER_ACTION_COOLDOWN_SEC = 5 * 60.0
 
 CANARY_TARGETS = (
     ("www.cloudflare.com", "/cdn-cgi/trace"),
     ("1.1.1.1", "/cdn-cgi/trace"),
+    ("www.google.com", "/robots.txt"),
 )
 
 
@@ -93,6 +95,7 @@ class RotationPolicy:
         self.rotation_times = deque()
         self.last_candidate_probe_at = 0.0
         self.last_hold_log_at = 0.0
+        self.last_user_action_at = 0.0
         self.active_id = ""
 
     def reset(self, now, active_id=""):
@@ -106,6 +109,8 @@ class RotationPolicy:
         """Feed one health sample; True when the channel has been degraded long enough."""
         if not self.enabled:
             return False
+        if canary_ok is None:
+            return self.degraded_streak >= DEGRADED_SAMPLES
         if float(now) - self.active_since < MIN_ACTIVE_SEC:
             return False
         if canary_ok and canary_ms is not None:
@@ -140,6 +145,8 @@ class RotationPolicy:
             return False
         if self.last_rotation_at and now - self.last_rotation_at < COOLDOWN_SEC:
             return False
+        if self.last_user_action_at and now - self.last_user_action_at < USER_ACTION_COOLDOWN_SEC:
+            return False
         cutoff = now - 3600.0
         while self.rotation_times and self.rotation_times[0] < cutoff:
             self.rotation_times.popleft()
@@ -150,6 +157,12 @@ class RotationPolicy:
 
     def note_candidate_probe(self, now):
         self.last_candidate_probe_at = float(now)
+
+    def note_user_action(self, now):
+        self.last_user_action_at = float(now)
+        self.degraded_streak = 0
+        self.baseline_ms = None
+        self.samples = 0
 
     def decide(self, now, *, mode, current_id, current_group, current_direct_ms, candidates,
                failing=False):
@@ -281,7 +294,18 @@ def load_candidates(base_dir, group, current_id, now=None, limit=12):
             except Exception:
                 continue
         picked.append(record)
-    picked.sort(key=lambda item: str(item.get("id") or ""))
+    def _rank(record):
+        profile_id = str(record.get("id") or "")
+        entry = stats.get(profile_id) if isinstance(stats, dict) else None
+        entry = entry if isinstance(entry, dict) else {}
+        rtt = _fresh_rtt(stats, profile_id, now)
+        try:
+            last_ok = float(entry.get("last_ok_at") or 0.0)
+        except (TypeError, ValueError):
+            last_ok = 0.0
+        return (rtt is None, float(rtt or 0.0), -last_ok, profile_id)
+
+    picked.sort(key=_rank)
     picked = picked[:max(1, int(limit))]
 
     targets = {}
@@ -353,7 +377,15 @@ def measure_direct(base_dir, profile_id, now=None):
 
 
 def probe_canary(port, budget=4.0):
-    """One tiny HTTP probe through the active SOCKS5; returns (ms, ok)."""
+    """One tiny HTTP probe through the active SOCKS5; returns (ms, ok or None)."""
+    import socket
+
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=1.0):
+            pass
+    except OSError:
+        return None, None
+
     import nova_exit_probe
 
     for host, path in CANARY_TARGETS:
@@ -388,7 +420,6 @@ class ProfileRotationMonitor:
         self._policy = RotationPolicy(enabled=enabled)
         self._active_id = ""
         self._thread = None
-        self._lock = threading.Lock()
 
     def start(self):
         if not self._enabled or self._thread is not None:
@@ -396,6 +427,9 @@ class ProfileRotationMonitor:
         self._thread = threading.Thread(target=self._run, daemon=True, name="NovaProfileRotation")
         self._thread.start()
         return True
+
+    def note_user_action(self, now=None):
+        self._policy.note_user_action(time.monotonic() if now is None else now)
 
     def _run(self):
         while not self._stop():
@@ -410,6 +444,7 @@ class ProfileRotationMonitor:
     def _tick(self):
         state = self._get_state() or {}
         if not state.get("connected") or state.get("starting") or state.get("recovering"):
+            self._policy.reset(time.monotonic(), self._active_id)
             return
         active_id = str(state.get("active_id") or "")
         group = str(state.get("group") or "")
@@ -430,6 +465,8 @@ class ProfileRotationMonitor:
             self._policy.reset(now, active_id)
             self._active_id = active_id
         canary_ms, canary_ok = self._canary_probe(port)
+        if canary_ok is None:
+            return
         fail_streak = int(state.get("fail_streak") or 0)
         if not self._policy.observe(now, canary_ms, canary_ok, fail_streak):
             return
@@ -453,13 +490,12 @@ class ProfileRotationMonitor:
             if self._policy.should_log_hold(now):
                 self._log(f"[Profiles] Деградация канала: {decision.reason}; остаёмся на {active_id}.")
             return
-        with self._lock:
-            latest = self._get_state() or {}
-            if str(latest.get("active_id") or "") != active_id:
-                return
-            if latest.get("starting") or latest.get("recovering"):
-                return
-            ok = bool(self._rotate(decision.profile_id, decision.reason))
+        latest = self._get_state() or {}
+        if str(latest.get("active_id") or "") != active_id:
+            return
+        if latest.get("starting") or latest.get("recovering"):
+            return
+        ok = bool(self._rotate(decision.profile_id, decision.reason))
         self._policy.note_rotation(now, ok)
         prefix = "[Profiles] Ротация" if ok else "[Profiles] Ротация не удалась"
         self._log(f"{prefix}: {active_id} -> {decision.profile_id} ({decision.reason}).")

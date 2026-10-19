@@ -44,6 +44,18 @@ class RotationPolicyTests(unittest.TestCase):
         policy.observe(220.0, None, False)
         self.assertTrue(policy.observe(250.0, None, False))
 
+    def test_unknown_canary_does_not_penalize(self):
+        policy = self.make_policy()
+        self.feed_healthy(policy)
+        self.assertFalse(policy.observe(190.0, None, None))
+        self.assertEqual(policy.degraded_streak, 0)
+
+    def test_user_action_blocks_rotation(self):
+        policy = self.make_policy()
+        policy.note_user_action(200.0)
+        self.assertFalse(policy.can_rotate(300.0, "group", "AWG Proton"))
+        self.assertTrue(policy.can_rotate(800.0, "group", "AWG Proton"))
+
     def test_active_time_blocks_early_rotation(self):
         policy = self.make_policy()
         policy.observe(10.0, 50.0, True)
@@ -138,6 +150,103 @@ class CandidateTests(unittest.TestCase):
             rotation.choose_candidate("current", "AWG Proton", None, [one, two]).profile_id,
             "two",
         )
+
+
+class _FakePolicy:
+    def __init__(self):
+        self.observe_result = True
+        self.decide_result = rotation.RotationDecision(True, "fast", "test")
+        self.rotations = []
+
+    def reset(self, *args, **kwargs):
+        pass
+
+    def observe(self, *args, **kwargs):
+        return self.observe_result
+
+    def can_rotate(self, *args, **kwargs):
+        return True
+
+    def can_probe_candidates(self, *args, **kwargs):
+        return True
+
+    def note_candidate_probe(self, *args, **kwargs):
+        pass
+
+    def decide(self, *args, **kwargs):
+        return self.decide_result
+
+    def note_rotation(self, now, ok):
+        self.rotations.append(ok)
+
+    def should_log_hold(self, now):
+        return False
+
+    def note_user_action(self, *args, **kwargs):
+        pass
+
+
+class MonitorTests(unittest.TestCase):
+    def make_monitor(self, state, rotate):
+        return rotation.ProfileRotationMonitor(
+            get_state=lambda: dict(state),
+            rotate=rotate,
+            log=lambda message: None,
+            stop=lambda: False,
+            base_dir=".",
+            enabled=True,
+            candidates_loader=lambda *args: [],
+            canary_probe=lambda port: (100.0, True),
+            direct_probe=lambda *args: 100.0,
+        )
+
+    def state(self):
+        return {
+            "active_id": "current",
+            "group": "AWG Proton",
+            "mode": "group",
+            "port": 1370,
+            "connected": True,
+            "starting": False,
+            "recovering": False,
+            "fail_streak": 0,
+        }
+
+    def test_monitor_rotates_once(self):
+        state = self.state()
+        calls = []
+        monitor = self.make_monitor(state, lambda pid, reason: calls.append(pid) or True)
+        monitor._policy = _FakePolicy()
+        monitor._tick()
+        self.assertEqual(calls, ["fast"])
+        self.assertEqual(monitor._policy.rotations, [True])
+
+    def test_monitor_skips_starting(self):
+        state = self.state()
+        state["starting"] = True
+        calls = []
+        monitor = self.make_monitor(state, lambda pid, reason: calls.append(pid) or True)
+        monitor._policy = _FakePolicy()
+        monitor._tick()
+        self.assertEqual(calls, [])
+
+    def test_monitor_skips_explicit_profile(self):
+        state = self.state()
+        state["mode"] = "profile"
+        calls = []
+        monitor = self.make_monitor(state, lambda pid, reason: calls.append(pid) or True)
+        monitor._policy = _FakePolicy()
+        monitor._tick()
+        self.assertEqual(calls, [])
+
+    def test_monitor_skips_unknown_canary(self):
+        state = self.state()
+        calls = []
+        monitor = self.make_monitor(state, lambda pid, reason: calls.append(pid) or True)
+        monitor._policy = _FakePolicy()
+        monitor._canary_probe = lambda port: (None, None)
+        monitor._tick()
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":

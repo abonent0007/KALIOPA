@@ -81,6 +81,7 @@ Cloudflare-IP fallback → foreign-default (наш патч, по умолчан
   выход), `list/exclude.txt` — всегда DIRECT; также `ai/cloudflare/youtube/telegram/whatsapp/discord/games/rkn`.
 - Ключевые env: `NOVA_PAC_KILLSWITCH=1` (закрывать при падении VPN), `NOVA_PAC_FOREIGN_VPN_DEFAULT=1`
   (по умолчанию: весь не-.ru трафик через VPN; `=0` — DIRECT),
+  `NOVA_PROFILE_ROTATION=0` (отключить авторотацию узлов профиля),
   `NOVA_ROUTING_BACKEND=auto|current|public-hybrid|windivert-hybrid`.
 
 ## Локальные модификации (не из upstream) — при обновлении исходников переприменить
