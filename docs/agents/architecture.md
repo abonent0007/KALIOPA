@@ -59,8 +59,9 @@
 - Списки: `resources/nova_list_sync.py` (`sync_from_network`, `raw_url`, `mirror_urls`).
 - Профили: `resources/nova_proton.py` (выпуск Proton), `nova_vless.py`, `nova_subscriptions.py`.
 - Авторотация узлов: `resources/nova_profile_rotation.py` — при устойчивой деградации канала
-  (RTT/ошибки) выбирает более быстрый узел той же группы; cooldown 15 мин, не более 2/час;
-  `MODE_PROFILE` не трогает; отключается `NOVA_PROFILE_ROTATION=0`.
+  (RTT/ошибки) выбирает более быстрый узел той же группы (Proton/VLESS/Custom/MASQUE);
+  cooldown 15 мин, не более 2/час; `MODE_PROFILE` не трогает; отключается
+  `NOVA_PROFILE_ROTATION=0`.
 - Tor: `resources/nova_tor.py`; DNS-AI: `resources/nova_dns_ai.py`; Cloudflare: `nova_cloudflare_*`.
 - TLS/SNI: `nova-rs/crates/nova-tls` (JA4, profiles chrome/firefox/yandex, терминатор),
   `docs/adr/0003-tunnel-phases.md`, `docs/adr/0004-neutral-sni.md`.

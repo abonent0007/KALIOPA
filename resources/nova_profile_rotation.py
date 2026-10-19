@@ -12,8 +12,8 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
-ROTATABLE_GROUPS = frozenset({"AWG Proton", "VLESS", "Custom"})
-ROTATABLE_IN_AUTO = frozenset({"AWG Proton"})
+ROTATABLE_GROUPS = frozenset({"AWG Proton", "VLESS", "Custom", "MASQUE"})
+ROTATABLE_IN_AUTO = frozenset({"AWG Proton", "MASQUE"})
 
 SAMPLE_INTERVAL_SEC = 45.0
 MIN_ACTIVE_SEC = 90.0

@@ -76,11 +76,11 @@ class RotationPolicyTests(unittest.TestCase):
         )
         self.assertFalse(decision.rotate)
 
-    def test_auto_only_rotates_proton(self):
+    def test_auto_only_rotates_supported_groups(self):
         policy = self.make_policy()
-        candidate = rotation.ProfileCandidate("fast", "VLESS", 40.0, 200.0, 0.0, 0)
         self.assertFalse(policy.can_rotate(200.0, "auto", "VLESS"))
         self.assertTrue(policy.can_rotate(200.0, "auto", "AWG Proton"))
+        self.assertTrue(policy.can_rotate(200.0, "auto", "MASQUE"))
 
     def test_cooldown_blocks_repeat(self):
         policy = self.make_policy()
