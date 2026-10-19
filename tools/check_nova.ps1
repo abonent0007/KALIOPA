@@ -8,7 +8,8 @@ if (-not (Test-Path $pacPath) -or (Get-Item $pacPath).Length -eq 0) {
 $pac = Get-Content -Raw -LiteralPath $pacPath
 Write-Host ("PAC bytes: {0}" -f $pac.Length)
 Write-Host ("FindProxyForURL: {0}" -f [bool]($pac -match "function FindProxyForURL"))
-Write-Host ("*.ru direct rule: {0}" -f $(if ($pac -match 'slice\(-3\)') { "OK" } else { "MISSING" }))
+$localRule = ($pac -match 'function isLocalDirect') -and ($pac -match '"\.su"') -and ($pac -match 'xn--p1ai')
+Write-Host ("local direct rule: {0}" -f $(if ($localRule) { "OK" } else { "MISSING" }))
 Write-Host "Main function tail:"
 ($pac -split "`n" | Select-String 'return "' | Select-Object -Last 6).Line | ForEach-Object { "  " + $_.Trim() }
 

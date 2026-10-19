@@ -73,20 +73,24 @@ https://github.com/confeden/Nova (указан в `nova-rs/Cargo.toml`).
 ## Модель маршрутизации (кратко; детали — docs/agents/routing.md)
 
 Порядок правил PAC (1.43.2 + локальные патчи):
-`user_direct → user_ru → user_eu → eu_over_exclude → exclude → *.ru → DIRECT (наш патч) →
-явные режимы приложений → AI-домены → eu → youtube → ru → discord → telegram → whatsapp →
-Cloudflare-IP fallback → foreign-default (наш патч, по умолчанию VPN)`.
+`user_direct → user_ru → user_eu → eu_over_exclude → exclude → локальные TLD
+(.ru/.su/.рф/…) → DIRECT (наш патч) → явные режимы приложений → AI-домены → eu → youtube →
+ru → discord → telegram → whatsapp → Cloudflare-IP fallback →
+foreign-default (наш патч, по умолчанию VPN)`.
 
 - `list/main.txt` — RU-список (блокировки DPI → туннель), `list/second.txt` — EU (гео → зарубежный
   выход), `list/exclude.txt` — всегда DIRECT; также `ai/cloudflare/youtube/telegram/whatsapp/discord/games/rkn`.
 - Ключевые env: `NOVA_PAC_KILLSWITCH=1` (закрывать при падении VPN), `NOVA_PAC_FOREIGN_VPN_DEFAULT=1`
-  (по умолчанию: весь не-.ru трафик через VPN; `=0` — DIRECT),
+  (по умолчанию: весь не-локальный трафик через VPN; `=0` — DIRECT),
+  `NOVA_LOCAL_DIRECT_TLDS=.by,.kz` (доп. локальные зоны к `.ru/.su/.рф/...`),
   `NOVA_PROFILE_ROTATION=0` (отключить авторотацию узлов профиля),
   `NOVA_ROUTING_BACKEND=auto|current|public-hybrid|windivert-hybrid`.
 
 ## Локальные модификации (не из upstream) — при обновлении исходников переприменить
 
-1. **PAC `*.ru → DIRECT`** + опция `foreign_default` (`nova.pyw`, `generate_pac`).
+1. **PAC локальные TLD → DIRECT** (`.ru`, `.su`, `.рф`/punycode, `.москва`, `.moscow`, `.рус`,
+   `.дети`, `.tatar`) + опция `foreign_default` (`nova.pyw`, `generate_pac`,
+   `resources/nova_local_direct.py`).
 2. **`Inno.py`: `distutils` удалён из `PYI_EXCLUDED_MODULES`** (баг PyInstaller 6.19 на Python 3.14).
 3. **`Inno.py`: повторная сборка в существующий staging** (`dirs_exist_ok=True`) и нейтральный
    `routing_settings.json` при отсутствии источника — иначе clean build падает на копировании/ISS.

@@ -1,0 +1,12 @@
+# user domains that always go direct (browsers on Auto)
+# Local Russian services on global TLDs
+vk.com
+yandex.com
+yandex.net
+yastatic.net
+userapi.com
+vk.me
+mycdn.me
+rt.com
+tass.com
+sputniknews.com
