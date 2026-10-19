@@ -9111,7 +9111,8 @@ var ai_region_direct = {ai_region_direct_js};
     }}
 
     if (pac_mode === "full") {{
-        if (pac_full_exclude && !matchDomain(eu_over_exclude, host) && matchDomain(exclude, host)) {{
+        if (pac_full_exclude && !matchDomain(eu_over_exclude, host) &&
+                (matchDomain(exclude, host) || matchDomain(user_direct, host) || isLocalDirect(host))) {{
             return "DIRECT";
         }}
         // Строка приложения, выбранная явно (не Auto), действует и здесь: Spotify шлёт
