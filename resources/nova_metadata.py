@@ -2,7 +2,7 @@ import os
 import re
 from pathlib import Path
 
-CURRENT_VERSION = "1.43.2"
+CURRENT_VERSION = "1.43.2.1"
 WINWS_FILENAME = "winws.exe"
 # Обновления берутся прямо из релизов основного репозитория, а не из отдельного
 # version.json. Одно место вместо двух: релиз опубликован — обновление доступно,
@@ -11,7 +11,10 @@ WINWS_FILENAME = "winws.exe"
 # Именно /releases/latest, а не /releases: GitHub исключает отсюда черновики и
 # предрелизы. Пока сборка лежит черновиком, пользователям она не предлагается, и
 # ни один технический предрелиз не может подменить собой версию продукта.
-UPDATE_URL = "https://api.github.com/repos/confeden/Nova/releases/latest"
+# Личный форк: обновления самой программы с upstream не проверяются.
+# Остаются только штатные обновления списков и профилей (nova_list_sync,
+# nova_proton, nova_subscriptions, nova_issuance).
+UPDATE_URL = ""
 
 
 def get_project_root(start_path=None):

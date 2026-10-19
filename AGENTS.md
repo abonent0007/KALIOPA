@@ -135,6 +135,13 @@ Cloudflare-IP fallback → foreign-default (наш патч, по умолчан
   и merge/rebase в `personal`.
 - Источники списков и профилей остаются стоковыми: не менять `nova_list_sync`, `nova_proton`,
   `nova_subscriptions`, `nova_issuance` и адреса ресурсов обновления.
+- Версия форка — `CURRENT_VERSION = "1.43.2.N"` в `resources/nova_metadata.py`;
+  перед новой сборкой: `python tools/bump_fork_version.py`.
+- Автообновление самой программы отключено (`UPDATE_URL = ""`, кнопка скрыта, updater
+  выходит сразу). Из сети остаются только списки и профили; не включать upstream updater.
+- При сбое обновления профилей или смене сервера смотреть изменения upstream только в
+  profile-update коде: `powershell -ExecutionPolicy Bypass -File tools/check_upstream_profile_updates.ps1 -Diff`;
+  переносить вручную, не меняя стоковые адреса.
 - Локальные профили (кроме стокового `profiles/AWG Proton/proton_nodes.json`), `bin/`, `temp/`,
   `.opencode/`, сборки и секреты не коммитятся (`.gitignore`).
 - Сборка — в `C:\Users\User\Documents\build`.

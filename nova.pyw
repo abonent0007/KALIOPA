@@ -26066,6 +26066,12 @@ function FindProxyForURLEx(url, host) {{
     def _apply_update_button_state(snapshot):
         if not btn_update:
             return
+        if not UPDATE_URL:
+            try:
+                btn_update.config(visible=False)
+            except Exception:
+                pass
+            return
 
         text = "Обновить до"
         fg = update_button_available_fg
@@ -26128,6 +26134,8 @@ function FindProxyForURLEx(url, host) {{
         return session
 
     def fetch_update_manifest():
+        if not UPDATE_URL:
+            return None, "проверка обновлений отключена в личном форке"
         try:
             session = _new_update_session()
         except ImportError as e:
@@ -26347,6 +26355,8 @@ function FindProxyForURLEx(url, host) {{
             os._exit(0)
 
     def request_installer_update():
+        if not UPDATE_URL:
+            return
         is_compiled = getattr(sys, "frozen", False) or sys.argv[0].lower().endswith(".exe")
         if not is_compiled:
             return
@@ -27513,6 +27523,9 @@ function FindProxyForURLEx(url, host) {{
 
     def check_and_update_worker(log_func):
         """Фоновая проверка обновлений."""
+        if not UPDATE_URL:
+            log_func("[Update] Проверка обновлений отключена: личный форк.")
+            return
         if "--no-update" in sys.argv:
             log_func("[Update] Автообновление отключено пользователем (--no-update).")
             return

@@ -29,6 +29,8 @@ $env:NOVA_SKIP_LIST_SYNC="1"
 (`Nova.exe`, `resources\` c pyruntime, `bin\`, `list/ip/strat`, `profiles/`, `temp/`).
 Промежуточные файлы PyInstaller: `C:\Users\User\Documents\build\temp_inno\dist|work`.
 `NOVA_KEEP_STAGING=1` — не удалять staging после сборки установщика (портативный `Nova.exe`).
+Версия форка — `resources/nova_metadata.py` (`1.43.2.N`); перед сборкой:
+`python tools/bump_fork_version.py`.
 Если ISCC не найден, Inno.py печатает WARN и оставляет staging — это штатный режим.
 
 ## Полный установщик
