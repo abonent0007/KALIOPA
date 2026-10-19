@@ -308,6 +308,7 @@ import nova_general_scope
 from nova_relay_env import relay_env_from_settings
 from nova_socks_probe import probe_socks5_payload
 import nova_profiles
+import nova_local_direct
 import nova_profile_rotation
 import nova_tk_clipboard
 import nova_warp_generator
@@ -8893,6 +8894,7 @@ try:
                 user_ru_js = "{" + ",".join(f'"{d}":1' for d in sorted(user_ru_domains)) + "}"
                 user_eu_js = "{" + ",".join(f'"{d}":1' for d in sorted(user_eu_domains)) + "}"
                 user_direct_js = "{" + ",".join(f'"{d}":1' for d in sorted(user_direct_domains)) + "}"
+                local_direct_tlds_js = json.dumps(list(nova_local_direct.local_direct_tlds()))
                 ru_js = "{" + ",".join(f'"{d}":1' for d in sorted(ru_domains)) + "}"
                 eu_js = "{" + ",".join(f'"{d}":1' for d in sorted(eu_domains)) + "}"
                 discord_js = "{" + ",".join(f'"{d}":1' for d in sorted(discord_domains)) + "}"
@@ -9068,6 +9070,15 @@ try:
     var user_ru = {user_ru_js};
     var user_eu = {user_eu_js};
     var user_direct = {user_direct_js};
+    var local_direct_tlds = {local_direct_tlds_js};
+    function isLocalDirect(host) {{
+        var value = String(host || "").toLowerCase();
+        for (var i = 0; i < local_direct_tlds.length; i++) {{
+            var suffix = local_direct_tlds[i];
+            if (value === suffix.slice(1) || value.slice(-suffix.length) === suffix) return true;
+        }}
+        return false;
+    }}
     var exclude = {exclude_js};
     var eu_over_exclude = {eu_over_exclude_js};
     var ru = {ru_js};
@@ -9240,9 +9251,9 @@ var ai_region_direct = {ai_region_direct_js};
     if (matchDomain(user_eu, host)) return "{eu_route}";
     if (matchDomain(eu_over_exclude, host)) return "{eu_route}";
     if (matchDomain(exclude, host)) return "DIRECT";
-    // *.ru: прямой путь всегда (winws применяется и на нём).
+    // Локальные TLD: .ru/.su/.рф/.москва/.рус/... — прямой путь.
     // Пользовательские списки выше могут перебить правило, если человек выбрал иное.
-    if (host === "ru" || host.slice(-3) === ".ru") return "DIRECT";
+    if (isLocalDirect(host)) return "DIRECT";
 {app_domain_priority}{ai_unlock_guard}    if (matchDomain(eu, host)) return "{eu_route}";
     if (matchDomain(youtube, host)) return "{youtube_route}";
     if (matchDomain(ru, host)) return "{ru_route}";
