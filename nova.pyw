@@ -325,6 +325,7 @@ import nova_subscriptions
 import nova_list_sync
 import nova_ai_region
 import nova_dns_probe
+import nova_dns_cache
 import nova_ping
 import nova_boot_timeline as boot_timeline
 import nova_win_routes
@@ -15523,14 +15524,27 @@ function FindProxyForURLEx(url, host) {{
             
             # Кэш для 24-часового ограничения
             self.cache_path = os.path.join(self.base_dir, "temp", "dns_check_cache.json")
-            self.dns_cache = {}  # { "domain": {"ip": "x.x.x.x", "timestamp": float} }
+            self.dns_cache = {}
             self.cache_lock = threading.Lock()
+
+            def _ttl_env(name, default):
+                try:
+                    return max(1, int(os.environ.get(name, default)))
+                except (TypeError, ValueError):
+                    return default
+
+            self.cache = nova_dns_cache.DNSCache(
+                self.dns_cache,
+                ttl=_ttl_env("NOVA_DNS_CACHE_TTL", nova_dns_cache.DEFAULT_TTL_SEC),
+                negative_ttl=_ttl_env("NOVA_DNS_NEGATIVE_TTL", nova_dns_cache.DEFAULT_NEGATIVE_TTL_SEC),
+            )
             self.load_cache()
 
         def load_cache(self):
             """Загружает кэш DNS из файла."""
             with self.cache_lock:
                 self.dns_cache = load_json_robust(self.cache_path, {})
+                self.cache.data = self.dns_cache
 
         def save_cache(self):
             """Сохраняет кэш DNS в файл."""
@@ -15539,13 +15553,12 @@ function FindProxyForURLEx(url, host) {{
 
         def resolve(self, domain, limiter, check_cache=True):
             """
-            Разрешает домен в IP-адрес, используя системный DNS,
-            ограничение скорости и кэширование.
+            Разрешает домен в IP-адрес через системный DNS с TTL-кэшем.
 
             Args:
                 domain (str): Домен для разрешения.
                 limiter (RateLimiter): Экземпляр ограничителя скорости.
-                check_cache (bool): Учитывать ли 24-часовой кэш.
+                check_cache (bool): Учитывать ли кэш.
 
             Returns:
                 tuple: (IP-адрес или None, статус 'ok'/'cached_ok'/'no_dns'/'error').
@@ -15555,33 +15568,36 @@ function FindProxyForURLEx(url, host) {{
 
             if check_cache:
                 with self.cache_lock:
-                    if domain in self.dns_cache and (now - self.dns_cache[domain]["timestamp"] < 86400):
-                        cached_ip = self.dns_cache[domain].get("ip")
-                        return cached_ip, "cached_ok" if cached_ip else "cached_no_dns"
+                    cached = self.cache.get(domain, now)
+                if cached is not None:
+                    return cached
 
-            if limiter: limiter.acquire()
-            
-            ip_address = None
-            
+            if limiter:
+                limiter.acquire()
+
             try:
-                # Используем стандартный системный резолвер
-                ip_address = socket.gethostbyname(domain)
+                infos = socket.getaddrinfo(
+                    domain, 80, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM
+                )
             except socket.gaierror:
-                # gaierror - основная ошибка для "не найден" или "ошибка разрешения"
                 return self._update_cache(domain, None), "no_dns"
             except Exception:
-                # Любые другие исключения (например, таймауты, если они случатся)
                 return self._update_cache(domain, None), "error"
 
+            addresses = [
+                (info[0], info[4][0])
+                for info in infos
+                if info and len(info) > 4 and info[4]
+            ]
+            ip_address = nova_dns_cache.choose_ip(addresses)
+            if not ip_address:
+                return self._update_cache(domain, None), "no_dns"
             return self._update_cache(domain, ip_address), "ok"
 
         def _update_cache(self, domain, ip_address):
             """Обновляет кэш с новым результатом и возвращает IP."""
             with self.cache_lock:
-                self.dns_cache[domain] = {
-                    "ip": ip_address,
-                    "timestamp": time.time()
-                }
+                self.cache.put(domain, ip_address, time.time())
             return ip_address
         
         def validate_domain_exists(self, domain, limiter):

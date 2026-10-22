@@ -83,6 +83,7 @@ foreign-default (наш патч, по умолчанию VPN)`.
 - Ключевые env: `NOVA_PAC_KILLSWITCH=1` (закрывать при падении VPN), `NOVA_PAC_FOREIGN_VPN_DEFAULT=1`
   (по умолчанию: весь не-локальный трафик через VPN; `=0` — DIRECT),
   `NOVA_LOCAL_DIRECT_TLDS=.by,.kz` (доп. локальные зоны к `.ru/.su/.рф/...`),
+  `NOVA_DNS_CACHE_TTL=300` / `NOVA_DNS_NEGATIVE_TTL=60` (TTL DNS-кэша, секунды),
   `NOVA_PROFILE_ROTATION=0` (отключить авторотацию узлов профиля),
   `NOVA_ROUTING_BACKEND=auto|current|public-hybrid|windivert-hybrid`.
 
