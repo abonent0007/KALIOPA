@@ -3699,6 +3699,22 @@ class TelegramTransparentRelayServer:
         try:
             from .transport import get_upstream_attempts
             base_attempts = _telegram_upstream_attempts(get_upstream_attempts() or [])
+            # MTProto поверх Tor-HTTP даёт 502 "tor protocol violation": 1378 — это
+            # HTTP-порт Tor, а не Opera. Если Opera (1371) не слушает, маршрут
+            # opera-http для Telegram исключаем; остаются warp-socks и direct.
+            def _local_port_open(port: int) -> bool:
+                import socket as _socket
+                try:
+                    with _socket.create_connection(("127.0.0.1", int(port)), timeout=0.2):
+                        return True
+                except OSError:
+                    return False
+
+            if base_attempts and not _local_port_open(1371):
+                base_attempts = [
+                    a for a in base_attempts
+                    if str(a.get("label") or "").strip().lower() != "opera-http"
+                ]
             if base_attempts:
                 pref_key = (str(effective_host or "").strip(), int(effective_port or 0))
                 pref_route, pref_until = self._route_preference_until.get(pref_key, ("", 0.0))
