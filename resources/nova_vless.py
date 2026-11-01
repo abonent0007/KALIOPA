@@ -701,6 +701,15 @@ def validate(node):
     encryption = node.encryption
     if encryption and encryption.lower() != "none" and not encryption.lower().startswith("mlkem768"):
         return "неизвестное значение encryption=%s" % encryption
+    # Пин (pcs) выписан на конкретный край CDN. Если SNI и Host расходятся, edge отдаст
+    # сертификат, который не совпадёт ни с пином, ни с SNI — узел не поднимется никогда.
+    # Замерено 2026-11-01: sni=firefox.com, host=…fastly.net, пин от третьего сертификата;
+    # все три варианта (пин, verifyPeerCertByName, serverName=host) дают TLS-ошибку.
+    pinned = (node.extra or {}).get("pcs")
+    if pinned and node.sni and node.host_header:
+        if node.sni.strip().rstrip(".").lower() != node.host_header.strip().rstrip(".").lower():
+            return ("pcs-пин выписан на другой хост (sni=%s, host=%s) — сертификат не совпадёт"
+                    % (node.sni, node.host_header))
     return ""
 
 
