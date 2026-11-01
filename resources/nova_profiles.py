@@ -1546,8 +1546,27 @@ def _cloudflare_order(records, preferred_id, generated_state):
     return lead + pool + rest
 
 
-def _stats_order(records, stats):
-    return sorted(records, key=lambda r: (_stats_failures(stats, r), natural_key(r["name"])))
+def _stats_order(records, stats, now=None):
+    """Fewer failures first, then the freshest measured RTT, then the name.
+
+    The owner asked for a stable connection: within the same failure count a node that answered
+    in 40 ms is a better first pick than one at 400 ms, and nodes never measured go last.
+    """
+    now = time.time() if now is None else float(now)
+    unknown = 10 ** 6
+
+    def key(record):
+        entry = _stats_entry(stats, record)
+        rtt = entry.get("rtt_ms")
+        rtt_at = _as_float(entry.get("rtt_at"), 0.0)
+        fresh = rtt is not None and rtt_at and 0 <= now - rtt_at < VLESS_MEMORY_SEC
+        try:
+            distance = int(rtt) if fresh else unknown
+        except (TypeError, ValueError):
+            distance = unknown
+        return (_stats_failures(stats, record), distance, natural_key(record["name"]))
+
+    return sorted(records, key=key)
 
 
 def _stats_entry(stats, record):

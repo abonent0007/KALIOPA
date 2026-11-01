@@ -8684,6 +8684,14 @@ try:
                 # EU-list traffic takes the primary only while its measured exit is abroad.
                 slots_runtime = globals().get("vpn_slots_runtime")
                 primary_foreign = bool(slots_runtime.primary_foreign()) if slots_runtime is not None else False
+                # Автоматика: основной выход российский, а выбранный резерв лёг — единственный
+                # зарубежный путь, который остался, это Tor. Ведём зарубежные списки через него,
+                # а не в DIRECT: иначе YouTube/EU снова упираются в блокировку.
+                if (not secondary_active and not primary_foreign and tor_route_ready()
+                        and secondary_kind != nova_vpn_slots.SECONDARY_TOR):
+                    secondary_kind = nova_vpn_slots.SECONDARY_TOR
+                    secondary_active = True
+                    secondary_route = "; ".join(nova_vpn_slots.secondary_pac_tokens(secondary_kind))
 
                 def _dedupe_route_parts(parts):
                     result = []
@@ -10187,6 +10195,23 @@ function FindProxyForURLEx(url, host) {{
             except:
                 return None
 
+        @staticmethod
+        def _endpoint_reachable(endpoint, timeout=2.0):
+            """TCP-проверка edge Opera: часть адресов из ленты/кэша молча таймаутит.
+
+            DNS тут не при чём — имена резолвятся, а сам IP:443 не отвечает. Пропускаем
+            такие адреса до запуска opera-proxy, иначе он тратит попытку впустую.
+            """
+            try:
+                host, _, port = str(endpoint or "").rpartition(":")
+                host = host.strip("[]")
+                if not host or not port.isdigit():
+                    return False
+                with socket.create_connection((host, int(port)), timeout=timeout):
+                    return True
+            except (OSError, ValueError):
+                return False
+
         def _published_endpoints(self):
             """Endpoints for this region from the published feed (1.44).
 
@@ -10659,10 +10684,16 @@ function FindProxyForURLEx(url, host) {{
                 self._forced_warp_proxy = ""
 
                 attempts = []
-                if cached_endpoint:
+                if cached_endpoint and self._endpoint_reachable(cached_endpoint):
                     attempts.append(("cached", cached_endpoint, 2.5, None))
+                skipped = 0
                 for _published in self._published_endpoints():
-                    attempts.append(("published", _published, 4.0, None))
+                    if self._endpoint_reachable(_published):
+                        attempts.append(("published", _published, 4.0, None))
+                    else:
+                        skipped += 1
+                if skipped:
+                    self.log_func(f"[EU] [Diag] Пропущено недоступных опубликованных endpoint: {skipped}.")
                 for _api_proxy in api_bootstrap_proxies:
                     attempts.append(("discover-api-proxy", None, 6.5, _api_proxy))
                 attempts.append(("discover", None, 6.5, None))

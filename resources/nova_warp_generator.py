@@ -75,6 +75,16 @@ LOG_PREFIX = "[WARP-ген]"
 # --- generation constants (and-warpgen §11) ----------------------------------
 TARGET_COUNT = 50
 SCAN_TIMEOUT_SEC = 45
+# Резервные точки входа, когда скан вернул пусто: публичные edge-адреса Cloudflare.
+# Список встроен в модуль, а не импортируется: PyInstaller не кладёт отдельные
+# resource-модули в сборку, если их импорт динамический.
+FALLBACK_ENDPOINTS = (
+    ("162.159.192.1", 2408), ("162.159.192.2", 2408), ("162.159.192.3", 2408),
+    ("162.159.192.4", 2408), ("162.159.192.5", 2408), ("162.159.192.6", 2408),
+    ("162.159.192.7", 2408), ("162.159.192.8", 2408), ("162.159.193.10", 2408),
+    ("162.159.193.1", 2408), ("188.114.96.1", 2408), ("188.114.97.1", 2408),
+    ("162.159.192.1", 500), ("162.159.192.1", 1701), ("162.159.192.1", 4500),
+)
 ENOUGH_VERIFIED = 24
 MAX_PER_SUBNET = 3
 MAX_DESIRABLE_RTT_MS = 1500
@@ -894,6 +904,13 @@ def generate(base_dir, nova_go_path, *, log, force=False, api_proxy=None, progre
 
     verified.sort(key=lambda e: e["rtt_ms"])
     endpoints = diversify(verified)[:target]
+    if not endpoints:
+        # Резервный источник: публичные edge-адреса Cloudflare. Скан мог не пройти из-за
+        # блокировки перебора префиксов; без этого генерация падала целиком.
+        endpoints = [{"host": host, "port": port, "rtt_ms": 999}
+                     for host, port in FALLBACK_ENDPOINTS][:target]
+        log(f"{LOG_PREFIX} Скан пуст — беру резервный список публичных точек входа "
+            f"({len(endpoints)} шт.).")
     if not endpoints:
         if scan_error is not None:
             reason = _scan_error_reason(scan_error)

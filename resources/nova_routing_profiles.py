@@ -37,6 +37,13 @@ AI_APP_DOMAINS = (
     "opencode.ai",
     # Jan: its own mirror apps.jan.ai, models from Hugging Face (huggingface.co, *.hf.co CDN)
     "jan.ai", "huggingface.co", "hf.co",
+    # Google AI: тот же набор, что точечно добавлен в ai_second. Правило ai_apps стоит в PAC
+    # раньше ai_second, поэтому отсюда Gemini уходит в основной слот (WARP), а не в Tor:
+    # Google отдаёт Tor-выходам 403 «нет разрешения на получение URL».
+    "gemini.google.com", "aistudio.google.com", "ai.google.dev", "labs.google",
+    "flow.google.com", "jules.google.com", "notebook.google.com", "notebooklm.google.com",
+    "aisandbox-pa.googleapis.com", "robinfrontend-pa.googleapis.com",
+    "alkalimakersuite-pa.clients6.google.com",
 )
 
 
