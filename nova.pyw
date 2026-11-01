@@ -31443,14 +31443,22 @@ function FindProxyForURLEx(url, host) {{
 
         def _quit_watcher():
             path = os.path.join(get_base_dir(), "temp", "quit.request")
+            started_at = time.time()
+            # Файл от предыдущего --quit не должен закрывать только что запущенный экземпляр.
+            with contextlib.suppress(Exception):
+                os.remove(path)
             while not globals().get("is_closing"):
                 time.sleep(1.0)
                 if os.path.exists(path):
+                    fresh = False
+                    with contextlib.suppress(Exception):
+                        fresh = os.path.getmtime(path) >= started_at
                     with contextlib.suppress(Exception):
                         os.remove(path)
-                    with contextlib.suppress(Exception):
-                        root.after(0, on_closing)
-                    return
+                    if fresh:
+                        with contextlib.suppress(Exception):
+                            root.after(0, on_closing)
+                        return
 
         threading.Thread(target=_quit_watcher, daemon=True, name="NovaQuitWatcher").start()
         
