@@ -3873,11 +3873,22 @@ class TelegramTransparentRelayServer:
                 except OSError:
                     return False
 
-            if base_attempts and not _local_port_open(1371):
-                base_attempts = [
-                    a for a in base_attempts
-                    if str(a.get("label") or "").strip().lower() != "opera-http"
-                ]
+            if base_attempts:
+                def _mtproto_capable(attempt) -> bool:
+                    if str(attempt.get("label") or "").strip().lower() != "opera-http":
+                        return True
+                    egress = str(attempt.get("egress") or "").strip().lower()
+                    if egress in ("tor", "opera"):
+                        # Tor-HTTP отвечает 502, Opera-прокси не пропускает
+                        # произвольный TCP (замер: CONNECT к DC Telegram висит
+                        # до таймаута, порт 25 — 502). MTProto им не несём.
+                        return False
+                    if egress == "profile":
+                        # У своего профиля HTTP-inbound от xray: TCP проходит.
+                        return True
+                    return _local_port_open(1371)
+
+                base_attempts = [a for a in base_attempts if _mtproto_capable(a)]
             if base_attempts:
                 pref_key = (str(effective_host or "").strip(), int(effective_port or 0))
                 pref_route, pref_until = self._route_preference_until.get(pref_key, ("", 0.0))

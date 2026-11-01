@@ -11348,6 +11348,7 @@ function FindProxyForURLEx(url, host) {{
                         "host": "127.0.0.1",
                         "port": opera_port,
                         "label": "opera-http",
+                        "egress": nova_vpn_slots.SECONDARY_OPERA,
                         "timeout": 2.2,
                     }
             except:
@@ -11356,6 +11357,7 @@ function FindProxyForURLEx(url, host) {{
                     "host": "127.0.0.1",
                     "port": 1371,
                     "label": "opera-http",
+                    "egress": nova_vpn_slots.SECONDARY_OPERA,
                     "timeout": 2.2,
                 }
             attempts_by_label["direct"] = {
