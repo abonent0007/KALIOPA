@@ -1228,12 +1228,119 @@ def _build_native_probe(dc: int) -> bytes:
 _NATIVE_PROBE_BAD_FIRST = {0x44414548, 0x54534F50, 0x20544547, 0x4954504F, 0xDDDDDDDD, 0xEEEEEEEE, 0x02010316}
 
 
+# --- Route speed memory ------------------------------------------------------
+#
+# The candidate order used to be a fixed name order, so WARP stayed first even
+# when it was the egress carrying nothing. The stats loop already counts bytes
+# per second per route; this keeps an EWMA of the downstream rate and lets that
+# number sort candidates inside the existing health buckets. Everything here is
+# best-effort: a missing or corrupt state file must never touch the relay.
+ROUTE_SPEED_STATE_FILENAME = "tgrelay_routes.json"
+ROUTE_SPEED_EWMA_ALPHA = 0.3
+ROUTE_SPEED_TTL = 24 * 3600.0
+ROUTE_SPEED_SAVE_INTERVAL = 300.0
+_route_speed: Dict[str, Dict[str, float]] = {}
+_route_speed_loaded = False
+_route_speed_saved_at = 0.0
+
+
+def _route_speed_path() -> str:
+    return os.path.join(APP_ROOT, "temp", ROUTE_SPEED_STATE_FILENAME)
+
+
+def _route_speed_load() -> None:
+    global _route_speed_loaded
+    if _route_speed_loaded:
+        return
+    _route_speed_loaded = True
+    try:
+        with open(_route_speed_path(), "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return
+    routes = data.get("routes") if isinstance(data, dict) else None
+    if not isinstance(routes, dict):
+        return
+    now = time.time()
+    for route, row in routes.items():
+        if not isinstance(row, dict):
+            continue
+        try:
+            updated = float(row.get("updated") or 0.0)
+            rate = float(row.get("rate_down") or 0.0)
+        except Exception:
+            continue
+        if rate <= 0 or now - updated > ROUTE_SPEED_TTL:
+            continue
+        _route_speed[str(route)] = {"rate_down": rate, "updated": updated}
+
+
+def _route_speed_score(route: str) -> float:
+    _route_speed_load()
+    row = _route_speed.get(str(route or "").strip())
+    if not row:
+        return 0.0
+    if time.time() - float(row.get("updated") or 0.0) > ROUTE_SPEED_TTL:
+        return 0.0
+    return float(row.get("rate_down") or 0.0)
+
+
+def _save_route_speed() -> None:
+    global _route_speed_saved_at
+    _route_speed_saved_at = time.time()
+    path = _route_speed_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"routes": _route_speed}, fh, ensure_ascii=False)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def _note_route_speed(route: str, rate_down: float) -> None:
+    route = str(route or "").strip()
+    try:
+        rate = float(rate_down)
+    except Exception:
+        return
+    if not route or rate <= 0:
+        return
+    _route_speed_load()
+    row = _route_speed.get(route) or {"rate_down": 0.0, "updated": 0.0}
+    previous = float(row.get("rate_down") or 0.0)
+    if previous <= 0:
+        row["rate_down"] = rate
+    else:
+        row["rate_down"] = ROUTE_SPEED_EWMA_ALPHA * rate + (1.0 - ROUTE_SPEED_EWMA_ALPHA) * previous
+    row["updated"] = time.time()
+    _route_speed[route] = row
+    if row["updated"] - _route_speed_saved_at >= ROUTE_SPEED_SAVE_INTERVAL:
+        _save_route_speed()
+
+
+def _order_attempts_by_speed(attempts):
+    """Fastest measured proxy first, direct always last.
+
+    Direct Telegram is provider-shaped on the target networks, so it never gets
+    promoted by a rate sample; only proxy egresses change places. Unknown routes
+    score zero and keep their current order (the sort is stable).
+    """
+    rendered = [a for a in (attempts or []) if isinstance(a, dict)]
+    direct = [a for a in rendered if str(a.get("kind") or "").strip().lower() == "direct"]
+    proxies = [a for a in rendered if str(a.get("kind") or "").strip().lower() != "direct"]
+    proxies.sort(key=lambda a: _route_speed_score(_wss_egress_label(a)), reverse=True)
+    return proxies + direct
+
+
 def _order_native_attempts(attempts, dc: int):
     """Proven egresses first, untested next, recently silent ones last.
 
     Without this the tunnel would keep picking WARP — which answers TCP but
     never delivers a byte from Telegram — and would then record the native path
-    as dead for the whole DC, hiding the egress that actually works.
+    as dead for the whole DC, hiding the egress that actually works. Inside a
+    bucket the measured downstream rate decides the order.
     """
     if not attempts or int(dc or 0) <= 0:
         return attempts
@@ -1243,6 +1350,8 @@ def _order_native_attempts(attempts, dc: int):
             continue
         state = _native_state(dc, _wss_egress_label(attempt))
         (good if state is True else bad if state is False else unknown).append(attempt)
+    for bucket in (good, unknown, bad):
+        bucket.sort(key=lambda a: _route_speed_score(_wss_egress_label(a)), reverse=True)
     return good + unknown + bad
 
 
@@ -1645,9 +1754,67 @@ class _TelegramWsPool:
 _WS_POOL = _TelegramWsPool()
 
 
+TRAFFIC_LOG_INTERVAL = _env_float("NOVA_TG_RELAY_TRAFFIC_LOG_INTERVAL", 60.0, minimum=5.0)
+PROBE_DIAG_LOG_INTERVAL = _env_float("NOVA_TG_RELAY_PROBE_DIAG_INTERVAL", 30.0, minimum=5.0)
+_traffic_agg: Dict[str, Dict[str, float]] = {}
+
+
+def _traffic_stats_key(label: str) -> Tuple[str, str]:
+    """Reduce a stats label to (log key, egress label).
+
+    Labels look like `path=tcp-fallback route=warp-socks target=...`. Target,
+    media flag and DC differ per flow, so they must not split the aggregate:
+    the point is one line per route per interval, not one per connection.
+    """
+    path = route = ""
+    for token in str(label or "").split():
+        name, _, value = token.partition("=")
+        if name == "path":
+            path = value
+        elif name == "route":
+            route = value
+    route = route or "unknown"
+    return (f"path={path} route={route}" if path else f"route={route}", route)
+
+
+def _flush_traffic(key: str, row: Dict[str, float], log_func, now: float) -> Tuple[int, int, float]:
+    window = max(1.0, now - float(row.get("window_start") or now))
+    up = int(row.get("up") or 0)
+    down = int(row.get("down") or 0)
+    sessions = int(row.get("sessions") or 0)
+    row["up"] = 0
+    row["down"] = 0
+    row["sessions"] = 0
+    row["window_start"] = now
+    row["last_log"] = now
+    log_func(
+        f"[TgRelay] traffic {key} sessions={sessions} "
+        f"up={up} down={down} rate_up={up / window:.0f}B/s rate_down={down / window:.0f}B/s "
+        f"window_s={window:.0f}"
+    )
+    return up, down, window
+
+
+def _note_traffic(key: str, route: str, delta_up: int, delta_down: int, log_func, now: float) -> None:
+    row = _traffic_agg.get(key)
+    if row is None:
+        row = {"up": 0.0, "down": 0.0, "sessions": 0.0, "window_start": now, "last_log": 0.0}
+        _traffic_agg[key] = row
+    row["up"] = float(row.get("up") or 0) + max(0, int(delta_up))
+    row["down"] = float(row.get("down") or 0) + max(0, int(delta_down))
+    row["sessions"] = float(row.get("sessions") or 0) + 1
+    last_log = float(row.get("last_log") or 0.0)
+    if last_log and now - last_log < TRAFFIC_LOG_INTERVAL:
+        return
+    _up, down, window = _flush_traffic(key, row, log_func, now)
+    if down > 0:
+        _note_route_speed(route, down / window)
+
+
 async def _traffic_stats_loop(counters: Dict[str, int], started: float, label: str, log_func, interval: float = 8.0):
     if not label or not callable(log_func):
         return
+    key, route = _traffic_stats_key(label)
     last_up = 0
     last_down = 0
     try:
@@ -1659,13 +1826,9 @@ async def _traffic_stats_loop(counters: Dict[str, int], started: float, label: s
             delta_down = down - last_down
             if delta_up <= 0 and delta_down <= 0:
                 continue
-            elapsed = max(0.001, time.monotonic() - float(started or time.monotonic()))
-            log_func(
-                f"[TgRelay] traffic {label} duration_s={elapsed:.1f} "
-                f"up={up} down={down} rate_up={delta_up / interval:.0f}B/s rate_down={delta_down / interval:.0f}B/s"
-            )
             last_up = up
             last_down = down
+            _note_traffic(key, route, delta_up, delta_down, log_func, time.monotonic())
     except asyncio.CancelledError:
         return
 
@@ -3737,7 +3900,7 @@ class TelegramTransparentRelayServer:
                     proxy_attempts = other_attempts + warp_attempts
                     attempts = proxy_attempts or direct_attempts
                 else:
-                    attempts = base_attempts
+                    attempts = _order_attempts_by_speed(base_attempts)
         except Exception:
             attempts = None
 
@@ -3951,7 +4114,7 @@ class TelegramTransparentRelayServer:
             key = (str(target_ip or "").strip().lower(), int(target_port or 0), str(reason or ""))
             now = time.monotonic()
             last = float(self._last_probe_diag_log.get(key, 0.0) or 0.0)
-            if (now - last) < 8.0:
+            if (now - last) < PROBE_DIAG_LOG_INTERVAL:
                 return
             self._last_probe_diag_log[key] = now
         except Exception:

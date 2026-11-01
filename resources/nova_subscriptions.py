@@ -41,6 +41,11 @@ try:
 except ImportError:  # pragma: no cover - a build that failed to ship the module
     nova_vless = None
 
+try:
+    import nova_vless_preflight
+except ImportError:  # pragma: no cover - a build that failed to ship the module
+    nova_vless_preflight = None
+
 __all__ = [
     "SUBSCRIPTIONS_FILENAME", "DEFAULT_INTERVAL_HOURS", "MIN_INTERVAL_HOURS", "MAX_INTERVAL_HOURS",
     "DEFAULT_USER_AGENT", "MAX_BODY_BYTES", "MAX_NODES", "DEFAULT_SOURCES",
@@ -732,6 +737,17 @@ def _apply_vless(base_dir, record, nodes, say, title):
     room = max(0, MAX_TOTAL_VLESS - foreign)
     plan = plan_sync(existing_owned, [n.identity for n in nodes], record["identities"],
                      min(record["keep"], room))
+
+    # Новые узлы пробуются до записи: мёртвый endpoint иначе займёт место в квоте
+    # и будет висеть 12 секунд на каждом подключении, пока карантин его не уберёт.
+    add_nodes = [by_identity[identity] for identity in plan["add"] if identity in by_identity]
+    if add_nodes and nova_vless_preflight is not None and nova_vless_preflight.enabled():
+        alive, rejected = nova_vless_preflight.probe_nodes(add_nodes)
+        if rejected:
+            alive_ids = {node.identity for node in alive}
+            plan["add"] = [identity for identity in plan["add"] if identity in alive_ids]
+            say("[Подписки] «%s»: отсеяно %d из %d новых узлов — endpoint не ответил."
+                % (title, len(rejected), len(add_nodes)))
 
     removed = 0
     for profile_id in plan["remove"]:

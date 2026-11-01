@@ -60,6 +60,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
+import nova_proton_variants
+
 # --- API -------------------------------------------------------------------------------------
 
 # Both hosts serve the whole flow; the second one is for networks where the first is closed.
@@ -177,7 +179,7 @@ _I1_LITERAL = re.compile(r"^<b 0x[0-9a-fA-F]+>$")
 # Stems Proton gives free logicals ("NL-FREE#128" -> "NL-FREE-128"). The exact pattern
 # nova_profiles uses for origin "generated" in AWG Proton, so listing and cleanup agree. A name
 # alone never proves a file is ours: cleanup also requires this install's private key inside.
-GENERATED_NAME_RE = re.compile(r"(?i)[A-Z]{2,3}-FREE-[0-9]+")
+GENERATED_NAME_RE = re.compile(r"(?i)[A-Z]{2,3}-FREE-[0-9]+(?:-p[0-9]+)?")
 _PRIVATE_KEY_LINE = re.compile(r"^[ \t]*PrivateKey[ \t]*=[ \t]*(\S+)[ \t]*\r?$", re.IGNORECASE | re.MULTILINE)
 _CONF_PEEK_CHARS = 64 * 1024
 _DRAFT_SUFFIX = ".tmp"
@@ -486,6 +488,49 @@ def order_nodes(nodes, liveness=None):
                 next_round.append(queue)
         queues = next_round
     return ordered
+
+
+VARIANT_PORTS = nova_proton_variants.DEFAULT_PORTS
+
+
+def variants_enabled():
+    """`NOVA_PROTON_VARIANTS=0` keeps the old one-profile-per-node behaviour."""
+    raw = os.environ.get("NOVA_PROTON_VARIANTS")
+    if raw is None:
+        return True
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def variant_files(filename, conf_text, base_port, count=3):
+    """Extra files for one node: the same key and peer on the other known ports.
+
+    A second port is the cheapest second chance at a handshake: node, key and peer
+    stay the same, only `Endpoint` and the junk set change (nova_proton_variants).
+    Names keep the generated shape plus `-pN`, so cleanup and the country guess
+    still recognise them.
+    """
+    try:
+        limit = max(1, int(count))
+    except (TypeError, ValueError):
+        limit = 3
+    if limit <= 1 or not variants_enabled():
+        return []
+    try:
+        base = int(base_port)
+    except (TypeError, ValueError):
+        base = 0
+    other_ports = [port for port in VARIANT_PORTS if int(port) != base]
+    if not other_ports:
+        return []
+    bodies = nova_proton_variants.build_variants(
+        conf_text, count=min(limit - 1, len(other_ports)), ports=other_ports
+    )
+    stem = str(filename or "")
+    if stem.lower().endswith(".conf"):
+        stem = stem[:-5]
+    if not stem:
+        return []
+    return [(f"{stem}-p{index}.conf", body) for index, body in enumerate(bodies, start=2)]
 
 
 def plan_profiles(nodes, count=TARGET_COUNT, *, taken=(), liveness=None):
@@ -1923,16 +1968,21 @@ def _issue(base_dir, group_dir, summary, emit, scrub, proxies, count, force, pro
                  "и записан не этой установкой")
         make_i1 = _make_i1_factory(emit, rng)
         files = []
+        file_countries = {}
         for index, item in enumerate(plan):
             text = build_proton_conf(
                 keys["wg_private"], item["node"], item["port"], random_junk(rng), make_i1(index)
             )
             files.append((item["filename"], text))
+            file_countries[item["filename"].lower()] = item["node"]["country"]
+            for extra_name, extra_text in variant_files(item["filename"], text, item["port"]):
+                files.append((extra_name, extra_text))
+                file_countries[extra_name.lower()] = item["node"]["country"]
         if not files:
             fail("из списка серверов не собралось ни одного профиля")
             return
 
-        step(f"записываю {len(files)} профилей")
+        step(f"записываю {len(files)} профилей ({len(plan)} узлов)")
         try:
             written, removed = _write_profile_set(group_dir, files, previous_names, emit, own_keys)
         except OSError as exc:
@@ -1942,12 +1992,12 @@ def _issue(base_dir, group_dir, summary, emit, scrub, proxies, count, force, pro
             fail("ни один профиль не записан: все имена заняты файлами, записанными не этой установкой")
             return
 
-        written_low = {name.lower() for name in written}
         countries = {}
-        for item in plan:
-            if item["filename"].lower() in written_low:
-                country = item["node"]["country"]
-                countries[country] = countries.get(country, 0) + 1
+        for name in written:
+            country = file_countries.get(name.lower())
+            if country is None:
+                country = name.split("-", 1)[0].upper() if is_generated_name(name) else "??"
+            countries[country] = countries.get(country, 0) + 1
         commit = {
             "seed_b64": base64.b64encode(seed).decode("ascii"),
             "wg_public": keys["wg_public"],

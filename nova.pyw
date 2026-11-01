@@ -26959,6 +26959,7 @@ function FindProxyForURLEx(url, host) {{
         opera_bad_proxy_streak = 0
         opera_last_good_ts = 0.0
         opera_next_restart_ts = 0.0
+        opera_restart_fail_streak = 0
         opera_last_port_down_log_ts = 0.0
         opera_last_recover_fail_log_ts = 0.0
         warp_bad_proxy_streak = 0
@@ -27249,6 +27250,7 @@ function FindProxyForURLEx(url, host) {{
                     opera_external = bool(getattr(opera_proxy_manager, "using_external", False))
                     if opera_port_alive and opera_proxy_alive:
                         opera_bad_proxy_streak = 0
+                        opera_restart_fail_streak = 0
                         opera_last_good_ts = now
                         opera_last_port_down_log_ts = 0.0
                         opera_last_recover_fail_log_ts = 0.0
@@ -27464,9 +27466,23 @@ function FindProxyForURLEx(url, host) {{
                                 log_func(f"[EU] Порт {opera_port} восстановлен.")
                                 last_opera_issue_state = None
                             else:
-                                opera_next_restart_ts = now + (5.0 if now < startup_fast_retry_until else 15.0)
+                                # Каждый неудачный перезапуск отодвигает следующий: 60с, 120с,
+                                # 240с… до 30 минут. Оператор edge молчит часами, и цикл
+                                # «перезапуск каждые 15 секунд» только забивает журнал.
+                                opera_restart_fail_streak = int(opera_restart_fail_streak or 0) + 1
+                                if now < startup_fast_retry_until:
+                                    retry_delay = 5.0
+                                else:
+                                    retry_delay = min(
+                                        1800.0,
+                                        60.0 * (2 ** min(opera_restart_fail_streak - 1, 5)),
+                                    )
+                                opera_next_restart_ts = now + retry_delay
                                 if (now - opera_last_recover_fail_log_ts) >= 45.0:
-                                    log_func(f"[EU] Не удалось восстановить порт {opera_port}.")
+                                    log_func(
+                                        f"[EU] Не удалось восстановить порт {opera_port}. "
+                                        f"Повтор через {int(retry_delay)}с (серия {opera_restart_fail_streak})."
+                                    )
                                     opera_last_recover_fail_log_ts = now
                                 last_opera_issue_state = "recover_failed"
 
