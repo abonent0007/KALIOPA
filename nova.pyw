@@ -336,6 +336,10 @@ try:
     import nova_doh_service
 except ImportError:  # pragma: no cover - сборка без модуля
     nova_doh_service = None
+try:
+    import nova_process_hygiene
+except ImportError:  # pragma: no cover - сборка без модуля
+    nova_process_hygiene = None
 from nova_routing_backends import (
     build_app_transport_decisions,
     get_selected_routing_backend_info,
@@ -31328,6 +31332,19 @@ function FindProxyForURLEx(url, host) {{
                     nova_doh_service.start(_doh_temp)
         except Exception as _doh_exc:
             safe_trace(f"[DoH] startup: {_doh_exc}")
+
+        # Осиротевшие после падения winws_test держат WinDivert: снимаем в фоне,
+        # чтобы PowerShell не задерживал старт окна.
+        try:
+            if nova_process_hygiene is not None:
+                threading.Thread(
+                    target=nova_process_hygiene.kill_orphans,
+                    kwargs={"log": safe_trace},
+                    daemon=True,
+                    name="NovaOrphanCleanup",
+                ).start()
+        except Exception:
+            pass
 
         # === SELF-RELOCATION LOGIC (Check only if Frozen) ===
         if is_compiled:

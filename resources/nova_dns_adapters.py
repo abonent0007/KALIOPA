@@ -25,10 +25,13 @@ __all__ = [
 
 def _powershell(command, timeout=DEFAULT_TIMEOUT):
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    proc = subprocess.run(
-        ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
-        capture_output=True, text=True, timeout=timeout, creationflags=flags,
-    )
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
+            capture_output=True, text=True, timeout=timeout, creationflags=flags,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError("powershell не запущен: %s" % exc) from exc
     if proc.returncode != 0:
         raise RuntimeError((proc.stderr or proc.stdout or "powershell failed").strip()[:300])
     return proc.stdout or ""
