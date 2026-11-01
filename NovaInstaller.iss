@@ -1,4 +1,4 @@
-#define MyAppName "Nova"
+#define MyAppName "OBNOVA"
 #define MyAppVersion "@@APP_VERSION@@"
 #define MyAppVersionInfo "@@APP_VERSION_INFO@@"
 #define MyAppPublisher "Brent"

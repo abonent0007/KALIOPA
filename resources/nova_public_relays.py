@@ -52,30 +52,33 @@ def get_enabled_public_relay_specs(backend_mode):
     return {key: spec for key, spec in specs.items() if bool(spec.enabled)}
 
 
+def _safe_call(func, default):
+    """Значение из чужого объекта или fallback: снимок не должен падать."""
+    try:
+        return func()
+    except Exception:
+        return default
+
+
 def build_public_relay_snapshot(backend_mode, managers):
     specs = get_public_relay_specs(backend_mode)
     managers = managers or {}
     snapshot = {}
     for key, spec in specs.items():
         manager = managers.get(key)
-        ready = False
-        running = False
-        bind_port = int(spec.port)
-        try:
-            ready = bool(manager and getattr(manager, "is_ready", lambda: False)())
-        except:
-            ready = False
-        try:
-            running = bool(manager and getattr(getattr(manager, "server", None), "running", False))
-        except:
-            running = False
+        ready = bool(manager) and bool(
+            _safe_call(lambda: getattr(manager, "is_ready", lambda: False)(), False)
+        )
+        running = bool(manager) and bool(
+            _safe_call(lambda: getattr(getattr(manager, "server", None), "running", False), False)
+        )
         if ready:
             running = True
-        try:
-            if manager:
-                bind_port = int(getattr(manager, "port", spec.port) or spec.port)
-        except:
-            bind_port = int(spec.port)
+        bind_port = int(spec.port)
+        if manager:
+            bind_port = _safe_call(
+                lambda: int(getattr(manager, "port", spec.port) or spec.port), int(spec.port)
+            )
         snapshot[key] = {
             "key": spec.key,
             "display_name": spec.display_name,

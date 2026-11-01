@@ -105,10 +105,17 @@ class Socks5UdpEndpoint(UdpEndpoint):
         self.proxy_host = str(proxy_host or "127.0.0.1").strip()
         self.proxy_port = int(proxy_port)
         self.timeout = max(0.2, float(timeout))
-        self.control_sock = socket.create_connection((self.proxy_host, self.proxy_port), timeout=self.timeout)
-        self.data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.data_sock.bind(("0.0.0.0", 0))
-        self.relay_addr = self._associate()
+        self.control_sock = None
+        self.data_sock = None
+        try:
+            self.control_sock = socket.create_connection((self.proxy_host, self.proxy_port), timeout=self.timeout)
+            self.data_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.data_sock.bind(("0.0.0.0", 0))
+            self.relay_addr = self._associate()
+        except BaseException:
+            # Не оставляем полуоткрытые сокеты, если прокси не ответил.
+            self.close()
+            raise
 
     def _associate(self) -> Tuple[str, int]:
         self.control_sock.sendall(b"\x05\x01\x00")
@@ -169,6 +176,8 @@ class Socks5UdpEndpoint(UdpEndpoint):
 
     def close(self) -> None:
         for sock in (self.data_sock, self.control_sock):
+            if sock is None:
+                continue
             try:
                 sock.close()
             except Exception:

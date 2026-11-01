@@ -1,45 +1,82 @@
 {
-    "captured_at": "2026-10-18T22:12:00+03:00",
-    "project": "Nova PC",
-    "version": "1.43.2",
-    "baseline_build": "old running build (pre-relaunch)",
-    "note": "Ports were open while the old build was running; it was closed before the new staging build was launched.",
-    "scenarios": {
-        "pac_bytes": 30901,
-        "ru_direct_rule": false,
-        "final_route": "DIRECT",
-        "ports": {
-            "1369": true,
-            "1370": true,
-            "1371": true,
-            "1372": true,
-            "1374": true
-        },
-        "socks_1370_gstatic": 204,
-        "http_1371_gstatic": 204,
-        "direct_ya_ru": 302,
-        "direct_google": 204
+  "captured_at": "2026-10-18T22:12:00+03:00",
+  "project": "Nova PC",
+  "version": "1.43.2",
+  "baseline_build": "old running build (pre-relaunch)",
+  "note": "Ports were open while the old build was running; it was closed before the new staging build was launched.",
+  "scenarios": {
+    "pac_bytes": 30901,
+    "ru_direct_rule": false,
+    "final_route": "DIRECT",
+    "ports": {
+      "1369": true,
+      "1370": true,
+      "1371": true,
+      "1372": true,
+      "1374": true
     },
-    "post_build": {
-        "captured_at": "2026-10-18T22:16:30+03:00",
-        "build": "C:\\Users\\User\\Documents\\build\\Inno\\v1.43.2\\Nova\\Nova.exe (22:14:26)",
-        "pac_bytes": 31483,
-        "ru_direct_rule": true,
-        "final_route": "SOCKS5 127.0.0.1:1370; PROXY 127.0.0.1:1371",
-        "ports": {
-            "1369": true,
-            "1370": true,
-            "1371": true,
-            "1372": true,
-            "1374": true
-        },
-        "socks_1370_gstatic": 204,
-        "http_1371_gstatic": 204,
-        "direct_ya_ru": 302,
-        "direct_google": 204
+    "socks_1370_gstatic": 204,
+    "http_1371_gstatic": 204,
+    "direct_ya_ru": 302,
+    "direct_google": 204
+  },
+  "post_build": {
+    "captured_at": "2026-10-18T22:16:30+03:00",
+    "build": "C:\\Users\\User\\Documents\\build\\Inno\\v1.43.2\\Nova\\Nova.exe (22:14:26)",
+    "pac_bytes": 31483,
+    "ru_direct_rule": true,
+    "final_route": "SOCKS5 127.0.0.1:1370; PROXY 127.0.0.1:1371",
+    "ports": {
+      "1369": true,
+      "1370": true,
+      "1371": true,
+      "1372": true,
+      "1374": true
     },
-    "intentional_changes": [
-        "*.ru goes DIRECT before explicit application modes",
-        "non-.ru fallback now uses the VPN/proxy chain instead of DIRECT"
+    "socks_1370_gstatic": 204,
+    "http_1371_gstatic": 204,
+    "direct_ya_ru": 302,
+    "direct_google": 204
+  },
+  "intentional_changes": [
+    "*.ru goes DIRECT before explicit application modes",
+    "non-.ru fallback now uses the VPN/proxy chain instead of DIRECT"
+  ],
+  "static_checks_1_43_2_7": {
+    "captured_at": "2026-10-28",
+    "source": "git HEAD 714071f vs working tree",
+    "relay_key_version": "1.43.2",
+    "fork_version": "1.43.2.7",
+    "google_ai_hosts": 11,
+    "gemini_in_ai_second": true,
+    "invalid_strategy_flags": 0,
+    "unit_tests": 44,
+    "py_compile": "PASS",
+    "cargo_check": "PASS",
+    "cargo_test": "NOT RUN: linker link.exe not found"
+  },
+  "runtime_1_43_2_7": {
+    "status": "NOT RUN",
+    "reason": "Nova ??????????? (????? 1369-1374 ???????); ?????? ?????? ????????? ?????? ? ????????, ????? ????? ????? ?????????????",
+    "installed_version_marker": "1.43.2.7"
+  },
+  "static_checks_2026_10_31": {
+    "captured_at": "2026-10-31",
+    "version": "1.43.2.13",
+    "unit_tests": 91,
+    "py_compile": "PASS",
+    "static_analysis": {
+      "unused_imports": 0,
+      "unguarded_calls": 0
+    },
+    "cargo_check": "PASS",
+    "notes": [
+      "DNS cascade aligned with upstream 1.44.1 (xbox-dns removed, dns-ai serial 7)",
+      "GeoHide endpoints refreshed from hosts file, ordered by HetrixTools uptime",
+      "ai.txt extended 90 -> 156 domains from geohide US list",
+      "Proton WG handshake blocked without Nova (plain WG too); WARP also silent",
+      "VLESS public nodes dead, 0 successful connections in stats",
+      "ChatGPT blocked on Cloudflare WARP exit (2a09:bac5::/32)"
     ]
+  }
 }

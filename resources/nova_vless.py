@@ -27,6 +27,7 @@ Epodonios/v2ray-configs, the largest Russian-reachable source):
 import base64
 import binascii
 import json
+import os
 import re
 import unicodedata
 from urllib.parse import quote, unquote
@@ -718,6 +719,16 @@ def _known_fingerprint(name, for_reality=False):
     return text
 
 
+def _honor_pcs():
+    """True when the link's `pcs` pin is applied to the TLS settings.
+
+    Off by default: a stale pin kills a live node, while the certificate is already verified against
+    `serverName`. `NOVA_VLESS_HONOR_PCS=1` restores the old, strict behaviour.
+    """
+    value = str(os.environ.get("NOVA_VLESS_HONOR_PCS", "") or "").strip().lower()
+    return value in {"1", "true", "on", "yes"}
+
+
 def _header_request(node):
     """The HTTP camouflage header for RAW, carrying the link's own host and path.
 
@@ -770,8 +781,14 @@ def _stream_settings(node):
         # `allowInsecure` is a removed feature: a configuration carrying it fails to load
         # (infra/conf/transport_security.go:362). Its replacements are what the core reads now, and
         # a link that only says "do not verify" gets a verified connection instead of no connection.
+        #
+        # `pcs` (pinnedPeerCertSha256) names one particular edge certificate. CDNs rotate them and
+        # the link's author may pin a certificate that belongs to a different `sni`, so a live node
+        # dies with "peer cert is unrecognized (against pinnedPeerCertSha256)" -- measured on
+        # 146.75.57.238: sni cdn.akamai.steamstatic.com serves 9B23…, the link pinned CD6E… .
+        # Verification against `serverName` already covers the connection, so the pin is opt-in.
         pinned = node.extra.get("pcs")
-        if pinned:
+        if pinned and _honor_pcs():
             tls["pinnedPeerCertSha256"] = pinned
         by_name = node.extra.get("vcn")
         if by_name:

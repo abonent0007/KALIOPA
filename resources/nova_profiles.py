@@ -1638,6 +1638,8 @@ def _proton_order(records, stats, now=None):
 # A node that has not been reached in this long is no longer evidence of anything: public VLESS
 # nodes are rented, moved and filtered constantly.
 VLESS_MEMORY_SEC = 24 * 3600
+# After this many consecutive failures a public node is not tried automatically for a day.
+VLESS_DEAD_STREAK = 3
 
 
 def _vless_order(records, stats, now=None):
@@ -1675,6 +1677,29 @@ def _vless_order(records, stats, now=None):
         return (bucket, distance, last_fail, natural_key(record["name"]))
 
     return sorted(records, key=key)
+
+
+def vless_quarantined(record, stats, now=None):
+    """True when a public node failed VLESS_DEAD_STREAK times in a row and has not worked since.
+
+    Public subscription nodes rot fast: in the 2026-10-31 run 19 of 246 had outcomes and every one
+    was a failure, with the selected node carrying a streak of 15. Ordering alone still walks such
+    a list head-first, spending VLESS_READY_TIMEOUT_SEC (12 s) per corpse. A quarantined node stays
+    out of automatic group walks for VLESS_MEMORY_SEC; an explicit pick still goes through.
+    """
+    now = time.time() if now is None else float(now)
+    entry = _stats_entry(stats, record)
+    try:
+        streak = int(entry.get("fail_streak") or 0)
+    except (TypeError, ValueError):
+        streak = 0
+    if streak < VLESS_DEAD_STREAK:
+        return False
+    last_ok = _as_float(entry.get("last_ok_at"), 0.0)
+    last_fail = _as_float(entry.get("last_fail_at"), 0.0)
+    if last_ok and last_ok >= last_fail:
+        return False
+    return 0 <= now - last_fail < VLESS_MEMORY_SEC
 
 
 def _masque_locked_out(record, stats, now):
@@ -1744,7 +1769,10 @@ def build_attempt_plan(profiles, sel, *, preferred_id="", generated_state=None, 
             group_members = [r for r in members(group) if not country or record_country(r) == country]
             ordered = _front(_proton_order(group_members, stats, now), preferred)
         elif group == GROUP_VLESS:
-            ordered = _front(_vless_order(members(group), stats, now), preferred)
+            group_members = members(group)
+            alive = [r for r in group_members if not vless_quarantined(r, stats, now)]
+            # All quarantined: fall back to the full list rather than refusing to connect.
+            ordered = _front(_vless_order(alive or group_members, stats, now), preferred)
         else:
             ordered = _front(_stats_order(members(group), stats), preferred)
         return [_attempt(r) for r in ordered]

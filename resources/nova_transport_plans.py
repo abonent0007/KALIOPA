@@ -28,7 +28,7 @@ ROUTING_MODE_VALUES = {"auto", "warp", "opera", "direct"}
 def _safe_bool(value):
     try:
         return bool(value)
-    except:
+    except Exception:
         return False
 
 
@@ -64,7 +64,7 @@ def _routing_settings_path():
                 if os.path.exists(candidate):
                     return candidate
         return ""
-    except:
+    except Exception:
         return ""
 
 
@@ -76,7 +76,7 @@ def _load_routing_settings():
         with open(path, "r", encoding="utf-8") as f:
             payload = json.load(f)
         return payload if isinstance(payload, dict) else {}
-    except:
+    except Exception:
         return {}
 
 
@@ -193,7 +193,7 @@ def build_public_tcp_upstream_attempts(
             if warp_connected and callable(tester):
                 try:
                     warp_ok = bool(tester(warp_port, timeout=float(warp_timeout)))
-                except:
+                except Exception:
                     warp_ok = False
             if warp_ok:
                 attempts.append(
@@ -205,7 +205,7 @@ def build_public_tcp_upstream_attempts(
                         "timeout": float(warp_timeout),
                     }
                 )
-    except:
+    except Exception:
         pass
 
     if secondary_is_managed:
@@ -230,7 +230,7 @@ def build_public_tcp_upstream_attempts(
             proxy_ok = False
             try:
                 port_open = _safe_bool(getattr(opera_proxy_manager, "_is_port_open_local", lambda: False)())
-            except:
+            except Exception:
                 port_open = False
             if port_open:
                 try:
@@ -239,7 +239,7 @@ def build_public_tcp_upstream_attempts(
                             timeout=float(opera_timeout)
                         )
                     )
-                except:
+                except Exception:
                     proxy_ok = False
             if port_open and proxy_ok:
                 attempts.append(
@@ -251,7 +251,7 @@ def build_public_tcp_upstream_attempts(
                         "timeout": float(opera_timeout),
                     }
                 )
-    except:
+    except Exception:
         pass
 
     if include_direct:

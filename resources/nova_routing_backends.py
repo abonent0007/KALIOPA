@@ -138,7 +138,7 @@ def build_app_transport_decisions(
             state = public_relay_states.get(relay_key) or {}
             if bool(state.get("ready")):
                 return True
-        except:
+        except Exception:
             pass
         return bool(legacy_ready)
 

@@ -23,6 +23,10 @@
 8. Явно выбранные режимы приложений (discord/telegram/whatsapp ≠ auto) → их маршрут.
 9. AI-ветки: `ai_second` → вторичный слот или DIRECT; `ai_region_direct` → DIRECT;
    `ai_unlock` (если нет ни одного зарубежного выхода) → DIRECT для пересечения с `eu`.
+   В `ai_second` также входят точные Google AI-хосты (`gemini.google.com`,
+   `aistudio.google.com` и т.п.): `list/second.txt` содержит только родительский
+   `gemini.google`, а `matchDomain` не покрывает им `.com`-хост. Без этого Gemini
+   уходил в `foreign_default` (основной RU-выход) и видел российский IP.
 10. `eu` (second.txt) → EU-маршрут.
 11. `youtube` → YouTube-маршрут (порядок зависит от зарубежности выхода основного слота).
 12. `ru` (main.txt) → RU-маршрут.

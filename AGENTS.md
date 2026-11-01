@@ -65,7 +65,8 @@ https://github.com/confeden/Nova (указан в `nova-rs/Cargo.toml`).
 | Синхронизация списков | `resources/nova_list_sync.py` |
 | Профили: Proton, VLESS, подписки | `resources/nova_proton.py`, `nova_vless.py`, `nova_subscriptions.py`, `nova_issuance.py` |
 | Rust-движок/обучение/пробы/TLS | `nova-rs/crates/*` (core, learn, probe, zapret, tls, tgrelay, tgrelay-net, health, cloudflare, cli) |
-| Стратегии winws | `strat/*.json`; маски ClientHello/QUIC — `fake/*.bin` |
+| Стратегии winws | `strat/*.json`; маски ClientHello/QUIC — `fake/*.bin`; версии движка и zapret2 — `docs/agents/engine-upgrades.md` |
+| Документы по узлам/DNS | `docs/agents/state-2026-10-31.md`, `dns-unblock.md`, `proton-and-vless.md`, `zapret2.md` |
 | Домены/IP | `list/*.txt`, `ip/*.txt` |
 | Профили окружения | `profiles/` (AWG Proton, AWG Cloudflare, Custom, MASQUE, VLESS) |
 | Решения | `docs/adr/0001..0004` |
@@ -101,6 +102,15 @@ foreign-default (наш патч, по умолчанию VPN)`.
 6. **Seed-стратегии обфускации** в `strat/general.json`: Google TLS/QUIC, `sniext`, VK kyber.
 7. **Security backport** (`nova.pyw`): self-deletion и admin relaunch без `shell=True`
    (`--cleanup-old-exe`, `subprocess.list2cmdline`).
+8. **Relay identity pinned** (`nova.pyw`): `API_RELAY_KEY_VERSION = "1.43.2"`, потому что
+   `profiles/opera_relay.key` выпущен для upstream 1.43.2; версия форка `1.43.2.N` не должна
+   попадать в логин `nova-pc-<version>`, иначе WARP/MASQUE/Opera получают `407 outdated-client`.
+   При ротации ключа менять ключ и эту константу одной парой.
+9. **Брендинг OBNOVA**: отображаемое имя — `OBNOVA` (заголовок окна, сплэш, трей, меню
+   «Перезапустить OBNOVA», диалоги, `MyAppName` в `NovaInstaller.iss`); фон — `img/background.png`
+   (генерируется `tools/make_background.py`, встраивается в exe при сборке). Имена exe/папки/
+   мьютекса/процессов и пути AppData остаются `Nova` — их менять нельзя, иначе сломаются
+   обновления, хелперы и существующая установка.
 
 ## Обновления
 
@@ -121,7 +131,9 @@ foreign-default (наш патч, по умолчанию VPN)`.
 
 ## Тесты и проверки
 
-- `python -m py_compile nova.pyw` (других Python-тестов нет; дальше — живые прогоны).
+- `python -m py_compile nova.pyw`; `python -m unittest discover -s tests -p "test_*.py"` (66 тестов).
+- `python tools/static_analysis.py` — замена линтера: неиспользуемые импорты, инвентарь
+  статических значений, внешние вызовы без `try`. Детали — `docs/agents/static-analysis.md`.
 - Rust (из `nova-rs/`): `cargo test --workspace`; TLS-формы: `cargo test -p nova-tls --features shape`;
   таблица фаз: `NOVA_UPDATE_PHASE_TABLE=1 cargo test -p nova-probe --test table`.
   CI выполняет оба основных прогона: `.github/workflows/build_tls_terminator.yml`.

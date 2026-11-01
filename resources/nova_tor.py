@@ -1691,7 +1691,13 @@ def _connect_public(host, port, timeout):
         raise OSError("адрес не публичный или не разрешился")
     last_error = None
     for family, sockaddr in targets[:2]:
-        sock = socket.socket(family, socket.SOCK_STREAM)
+        try:
+            sock = socket.socket(family, socket.SOCK_STREAM)
+        except OSError as exc:
+            # Семейство не поддержано или кончились дескрипторы: пробуем
+            # следующий адрес, а не сдаёмся на первом же.
+            last_error = exc
+            continue
         try:
             sock.settimeout(timeout)
             sock.connect(sockaddr)

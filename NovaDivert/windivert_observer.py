@@ -466,7 +466,7 @@ class ObserverService:
                         "exe": payload.get("exe") or "",
                         "flow_key": flow_key,
                     }
-        except:
+        except Exception:
             pass
 
     def _remove_flow_payload(self, payload):
@@ -523,7 +523,7 @@ class ObserverService:
                     "dst_port": dst_port,
                     "packet_len": len(data),
                 }
-        except:
+        except Exception:
             return None
         return None
 

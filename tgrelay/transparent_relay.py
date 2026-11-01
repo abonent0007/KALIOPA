@@ -18,13 +18,11 @@ from typing import Dict, List, Optional, Tuple
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from .config import (
-    CFPROXY_DEFAULT_DOMAINS,
     cf_ws_subprotocol_header,
     get_cfproxy_domains,
     get_cfproxy_primary_domains,
     is_owned_cf_domain,
     proxy_config,
-    start_cfproxy_domain_refresh,
 )
 from . import persona, phase
 from .raw_websocket import (

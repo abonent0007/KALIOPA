@@ -739,6 +739,38 @@
                 "--dpi-desync-repeats=6",
                 "--dpi-desync-fake-quic=fake/quic_initial_vk_com.bin"
             ]
+        },
+        {
+            "name": "general_MD_midsld",
+            "args": [
+                "--filter-tcp=80,443",
+                "--dpi-desync=multidisorder",
+                "--dpi-desync-split-pos=midsld",
+                "--dpi-desync-fooling=badseq",
+                "--dpi-desync-repeats=6"
+            ]
+        },
+        {
+            "name": "general_MS_sniext1",
+            "args": [
+                "--filter-tcp=443",
+                "--dpi-desync=multisplit",
+                "--dpi-desync-split-pos=sniext+1",
+                "--dpi-desync-fooling=badseq",
+                "--dpi-desync-repeats=8"
+            ]
+        },
+        {
+            "name": "general_MD_seqovl",
+            "args": [
+                "--filter-tcp=443",
+                "--dpi-desync=multidisorder",
+                "--dpi-desync-split-pos=midsld",
+                "--dpi-desync-split-seqovl=1",
+                "--dpi-desync-split-seqovl-pattern=fake/tls_clienthello_www_google_com.bin",
+                "--dpi-desync-fooling=badseq",
+                "--dpi-desync-repeats=6"
+            ]
         }
     ]
 }

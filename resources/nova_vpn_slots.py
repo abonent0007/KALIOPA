@@ -70,7 +70,10 @@ HOME_COUNTRY = "RU"
 _COUNTRY_RE = re.compile(r"^[A-Z]{2}$")
 
 # Nova Android CountryDisplayOrder.kt: preferred exits first, then Europe, America, Asia, other.
-_PREFERRED_COUNTRIES = ("NL", "NO", "PL", "RO", "CH", "US", "CA", "MX", "JP", "SG")
+# Preferred = nearest first, measured from Russia 2026-10-12 (TCP-443 median over the live Proton
+# list): NL 92, NO 112, PL 137, RO 148, CA 162, MX 187, US 189, SG 224, JP 316 ms; CH silent.
+# Change it together with the Android list.
+_PREFERRED_COUNTRIES = ("NL", "NO", "PL", "RO", "CA", "MX", "US", "SG", "JP", "CH")
 _EUROPE = frozenset((
     "AL", "AD", "AT", "BA", "BE", "BG", "BY", "CH", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FR",
     "GB", "GR", "HR", "HU", "IE", "IS", "IT", "LI", "LT", "LU", "LV", "MC", "MD", "ME", "MK", "MT",
@@ -441,10 +444,11 @@ def secondary_attempts(choice, last=None):
 
     Named choices are a list of one (I1). «Авто» starts with the last secondary that carried
     traffic, then Opera in the configured region -- Opera's own controller may fall back EU -> US
-    inside that attempt, which is allowed in auto only -- then Tor: the remembered entry when there
-    is one, otherwise Tor's own «Авто» walk. An imported profile is a named choice only and never
-    joins the «Авто» ring (D25); its own walk over the group's nodes happens one level down, inside
-    the runner, exactly the way a named Opera may still fall back EU -> US inside its attempt.
+    inside that attempt, which is allowed in auto only -- then our own Proton group (D35), then
+    Tor: the remembered entry when there is one, otherwise Tor's own «Авто» walk. Any other
+    imported profile is a named choice only and never joins the «Авто» ring (D25); its own walk
+    over the group's nodes happens one level down, inside the runner, exactly the way a named
+    Opera may still fall back EU -> US inside its attempt.
     """
     choice = choice if isinstance(choice, dict) else {}
     mode = normalize_secondary_mode(choice.get("mode"))
@@ -460,9 +464,11 @@ def secondary_attempts(choice, last=None):
     last_kind = str(last.get("kind") or "").strip().lower()
     opera_region = normalize_opera_region(last.get("region"), region) if last_kind == SECONDARY_OPERA else region
     tor_entry = normalize_tor_entry(last.get("entry")) if last_kind == SECONDARY_TOR else TOR_ENTRY_AUTO
-    opera = (SECONDARY_OPERA, opera_region)
-    tor = (SECONDARY_TOR, tor_entry)
-    return [tor, opera] if last_kind == SECONDARY_TOR else [opera, tor]
+    ring = [(SECONDARY_OPERA, opera_region), (SECONDARY_PROFILE, _GROUP_PROTON), (SECONDARY_TOR, tor_entry)]
+    for index, (kind, _value) in enumerate(ring):
+        if kind == last_kind:
+            return ring[index:] + ring[:index]
+    return ring
 
 
 def secondary_indicator_label(kind, region=""):

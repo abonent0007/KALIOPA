@@ -146,6 +146,15 @@ def list_adapters():
     """Адаптеры Up с IPv4, в порядке, который отдаёт система."""
     if os.name != "nt":
         return []
+    try:
+        return _list_adapters()
+    except (OSError, AttributeError, ValueError):
+        # iphlpapi недоступен или структура не совпала с ожидаемой: пустой
+        # список — штатное «не знаю», вызывающие его уже обрабатывают.
+        return []
+
+
+def _list_adapters():
     size = ctypes.c_ulong(0)
     flags = (GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST
              | GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_INCLUDE_GATEWAYS)

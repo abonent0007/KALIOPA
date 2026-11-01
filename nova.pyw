@@ -274,6 +274,7 @@ from nova_console_logging import (
 )
 from nova_metadata import CURRENT_VERSION, UPDATE_URL, WINWS_FILENAME
 from nova_opera_failover import OperaFailoverController, build_fake_sni_args, build_full_dial_proxy_args
+from nova_opera_feed import endpoints_for_country, fetch_endpoint_feed
 
 # FIX: In compiled (PyInstaller) builds, CURRENT_VERSION is frozen at build time.
 # If the installer overwrites nova_metadata.py on disk with a newer version,
@@ -314,6 +315,7 @@ import nova_tk_clipboard
 import nova_warp_generator
 import nova_proton
 import nova_captcha_window
+import nova_dns_endpoints
 import nova_tor
 import nova_vpn_slots
 import nova_exit_probe
@@ -486,7 +488,7 @@ def install_requirements_visually():
     except Exception as e:
         if has_tk:
             # Try to show error
-            try: ctypes.windll.user32.MessageBoxW(0, f"Ошибка установки библиотек: {e}\nПопробуйте установить их вручную: pip install requests urllib3 Pillow pystray cryptography", "Nova Error", 0x10)
+            try: ctypes.windll.user32.MessageBoxW(0, f"Ошибка установки библиотек: {e}\nПопробуйте установить их вручную: pip install requests urllib3 Pillow pystray cryptography", "OBNOVA Error", 0x10)
             except: pass
         # Fallback: exit if critical networking/relay deps are still missing
         critical_missing = False
@@ -514,7 +516,7 @@ try:
 except ImportError as e:
     TRAY_SUPPORT = False
     # Optional: Warn user but continue
-    # ctypes.windll.user32.MessageBoxW(0, f"Функция трея отключена. Ошибка: {e}", "Nova Warning", 0x30)
+    # ctypes.windll.user32.MessageBoxW(0, f"Функция трея отключена. Ошибка: {e}", "OBNOVA Warning", 0x30)
 
 # TRACE UTILS
 def safe_trace(msg):
@@ -790,7 +792,7 @@ try:
     # a broken Tk runtime keeps the readable boot error instead of a bare traceback.
     import nova_profiles_ui
 except ImportError as e:
-    ctypes.windll.user32.MessageBoxW(0, f"Critical Error: Failed to load Tkinter.\n\n{e}", "Nova Boot Error", 0x10)
+    ctypes.windll.user32.MessageBoxW(0, f"Critical Error: Failed to load Tkinter.\n\n{e}", "OBNOVA Boot Error", 0x10)
     sys.exit(1)
 
 # === SPLASH SCREEN: Immediate visual feedback while loading ===
@@ -806,7 +808,7 @@ try:
     _w, _h = 340, 80
     _splash_root.geometry(f"{_w}x{_h}+{(_sw-_w)//2}+{(_sh-_h)//2}")
     _splash_label = tk.Label(
-        _splash_root, text="Nova \u2014 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0430\u2026",
+        _splash_root, text="OBNOVA \u2014 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0430\u2026",
         fg="#e0e0e0", bg="#1a1a2e", font=("Segoe UI", 13)
     )
     _splash_label.pack(expand=True)
@@ -836,7 +838,7 @@ if not is_admin():
     _close_splash()
     # FIX: Check for infinite loop (relaunch flag)
     if "--admin-relaunch" in sys.argv:
-        ctypes.windll.user32.MessageBoxW(0, "Не удалось получить права администратора автоматически.\n\nПожалуйста, нажмите правой кнопкой мыши на файл и выберите 'Запуск от имени администратора'.", "Nova - Ошибка прав", 0x10)
+        ctypes.windll.user32.MessageBoxW(0, "Не удалось получить права администратора автоматически.\n\nПожалуйста, нажмите правой кнопкой мыши на файл и выберите 'Запуск от имени администратора'.", "OBNOVA - Ошибка прав", 0x10)
         sys.exit(1)
 
     try:
@@ -1363,7 +1365,7 @@ try:
                 if folder == "bin": 
                     # Показываем окно с ошибкой, чтобы видеть путь даже без консоли
                     try:
-                        ctypes.windll.user32.MessageBoxW(0, f"Critical: Internal 'bin' folder missing.\nPath: {internal_source}", "Nova Deploy Error", 0x10)
+                        ctypes.windll.user32.MessageBoxW(0, f"Critical: Internal 'bin' folder missing.\nPath: {internal_source}", "OBNOVA Deploy Error", 0x10)
                     except: pass
                 
                 # DEBUG: Log missing internal path info to file
@@ -1382,7 +1384,7 @@ try:
             if folder == "bin":
                 internal_winws = os.path.join(internal_source, WINWS_FILENAME)
                 if not os.path.exists(internal_winws):
-                    try: ctypes.windll.user32.MessageBoxW(0, f"Critical Build Error: 'winws.exe' is missing.\nPath: {internal_winws}", "Nova Internal Error", 0x10)
+                    try: ctypes.windll.user32.MessageBoxW(0, f"Critical Build Error: 'winws.exe' is missing.\nPath: {internal_winws}", "OBNOVA Internal Error", 0x10)
                     except: pass
 
             # Если папки назначения нет - создаем
@@ -6057,7 +6059,7 @@ try:
             pass
 
     def _api_proxies():
-        """Routes for API calls that must leave Russia: local Opera first, then the relays.
+        """Routes for API calls that must leave Russia: local Opera, then Tor, then the relays.
 
         Relay URLs carry the relay password in userinfo: callers pass the list on to modules
         that scrub it, and nothing here logs it.
@@ -6066,6 +6068,15 @@ try:
         try:
             if is_local_port_open_quick(1371):
                 proxies.append("http://127.0.0.1:1371")
+        except Exception:
+            pass
+        # Tor (webtunnel) publishes HTTP CONNECT on 1378. When Opera and the relays are unreachable,
+        # it is the only route that still leaves Russia -- and Proton's API is blocked by SNI, so a
+        # direct call times out instead of answering. Same exit for the API call and the CAPTCHA
+        # window keeps Proton's 12087 away.
+        try:
+            if is_local_port_open_quick(1378):
+                proxies.append("http://127.0.0.1:1378")
         except Exception:
             pass
         try:
@@ -6210,7 +6221,7 @@ try:
                 self._set(kind, message=str(message or "").strip())
                 if is_closing:
                     # Both modules treat a raising callback as a clean cancel.
-                    raise RuntimeError("Nova закрывается")
+                    raise RuntimeError("OBNOVA закрывается")
             return _callback
 
         def _nova_go_path(self):
@@ -6334,7 +6345,7 @@ try:
                 profile_name = f"Cloudflare MASQUE {number}"
                 out_path = os.path.join(folder, f"{profile_name}.json")
                 cmd = [nova_go, "masque", "register", "--out", out_path, "--accept-tos",
-                       "--name", "Nova PC", "--api-mode", "auto"]
+                       "--name", "OBNOVA PC", "--api-mode", "auto"]
                 first_proxy = ""
                 if is_local_port_open_quick(1371):
                     first_proxy = "http://127.0.0.1:1371"
@@ -7604,13 +7615,16 @@ try:
         """
 
         # Opera restarts itself (EU direct -> EU over WARP -> US in «Авто»); «Авто» moves on to Tor
-        # only when none of that brought the proxy back for this long.
-        OPERA_AUTO_FAIL_SEC = 180.0
+        # only when none of that brought the proxy back for this long (1.44: 90 s, was 180 s).
+        OPERA_AUTO_FAIL_SEC = 90.0
         # Tor walks its own entries; a "failed" that stays failed this long moves «Авто» on.
         TOR_AUTO_FAIL_GRACE_SEC = 15.0
         OPERA_RETURN_BASE_SEC = 20 * 60.0
         OPERA_RETURN_MAX_SEC = 2 * 3600.0
         OPERA_TRIAL_BUDGET_SEC = 120.0
+        # Our own Proton group inside «Авто» (D35): the runner walks the group's nodes itself, and a
+        # group that carried nothing for this long moves «Авто» on to Tor.
+        PROFILE_AUTO_FAIL_SEC = 75.0
 
         def __init__(self, log_func=None):
             self.log_func = log_func or _profiles_log
@@ -7720,6 +7734,20 @@ try:
 
         # -- control ----------------------------------------------------------------------------
 
+        @staticmethod
+        def _ring(choice, last):
+            """secondary_attempts, minus the Proton step of «Авто» when no Proton profile exists yet."""
+            attempts = nova_vpn_slots.secondary_attempts(choice, last)
+            if choice.get("mode") != nova_vpn_slots.SECONDARY_AUTO:
+                return attempts
+            have = False
+            with contextlib.suppress(Exception):
+                have = any(str(r.get("group") or "") == nova_profiles.GROUP_PROTON
+                           for r in nova_profiles.list_profiles(get_base_dir()))
+            if have:
+                return attempts
+            return [a for a in attempts if a[0] != nova_vpn_slots.SECONDARY_PROFILE] or attempts
+
         def start(self):
             """Core start: bring up the first attempt of the persisted choice. Runs on a worker."""
             with self._lock:
@@ -7735,7 +7763,7 @@ try:
                 self.mode = choice["mode"]
                 self.profile_choice = {"group": choice.get("profile_group", ""),
                                        "profile": choice.get("profile", "")}
-                self._attempts = nova_vpn_slots.secondary_attempts(choice, last)
+                self._attempts = self._ring(choice, last)
                 self._index = 0
                 self._reset_trial()
                 self._generation += 1
@@ -7756,7 +7784,7 @@ try:
                 self.mode = choice["mode"]
                 self.profile_choice = {"group": choice.get("profile_group", ""),
                                        "profile": choice.get("profile", "")}
-                self._attempts = nova_vpn_slots.secondary_attempts(choice, current)
+                self._attempts = self._ring(choice, current)
                 self._index = 0
                 self._reset_trial()
                 self._generation += 1
@@ -7841,6 +7869,10 @@ try:
                         self._reset_trial()
                     elif kind == nova_vpn_slots.SECONDARY_TOR:
                         self.entry = nova_vpn_slots.normalize_tor_entry(value)
+                    elif self.mode == nova_vpn_slots.SECONDARY_AUTO:
+                        # A step of the «Авто» ring: the group, not a pinned node; the trial back to
+                        # Opera that _advance_locked scheduled must survive the switch.
+                        self.profile_choice = {"group": str(value or ""), "profile": ""}
                     else:
                         self._reset_trial()
                     self._attempt_started = time.time()
@@ -7943,21 +7975,26 @@ try:
                     # A named reserve is never replaced by another kind (I1). What it does when its
                     # tunnel dies is walk to the next profile of its own group -- the same answer the
                     # primary gives, and the reason the choice may be a group and not only one node.
+                    walk = False
                     if up:
                         self._profile_dead_since = 0.0
-                        return
-                    if not self._profile_dead_since:
+                    elif not self._profile_dead_since:
                         self._profile_dead_since = now
+                    elif now - self._profile_dead_since >= SecondaryProfileRunner.DEAD_GRACE_SEC:
+                        self._profile_dead_since = now
+                        walk = True
+                    if walk:
+                        threading.Thread(
+                            target=self._advance_profile, args=(self.profile_runner(), self._generation),
+                            daemon=True, name="NovaSecondaryProfileWalk").start()
+                    if self.mode != nova_vpn_slots.SECONDARY_AUTO:
                         return
-                    if now - self._profile_dead_since < SecondaryProfileRunner.DEAD_GRACE_SEC:
+                    # «Авто» on Proton: the group walks its own nodes, and when none carried traffic
+                    # for PROFILE_AUTO_FAIL_SEC the ring moves on (Tor). Opera is tried back below.
+                    since = max(self._attempt_started, self._last_good)
+                    if not up and since and now - since >= self.PROFILE_AUTO_FAIL_SEC:
+                        self._advance_locked(now, self._generation, f"Proton не отвечает {int(now - since)} с")
                         return
-                    self._profile_dead_since = now
-                    generation = self._generation
-                    runner = self.profile_runner()
-                    threading.Thread(
-                        target=self._advance_profile, args=(runner, generation),
-                        daemon=True, name="NovaSecondaryProfileWalk").start()
-                    return
                 if self.mode != nova_vpn_slots.SECONDARY_AUTO:
                     return
                 generation = self._generation
@@ -7966,7 +8003,7 @@ try:
                     if not up and since and now - since >= self.OPERA_AUTO_FAIL_SEC:
                         self._advance_locked(now, generation, f"Opera не отвечает {int(now - since)} с")
                     return
-                # On Tor: try Opera back now and then, and walk on when Tor itself gave up.
+                # On Tor or Proton: try Opera back now and then; Tor that gave up moves the ring on.
                 if self._trial_started:
                     if opera_usable:
                         self._reset_trial()
@@ -7990,7 +8027,8 @@ try:
                 state = ""
                 with contextlib.suppress(Exception):
                     state = str(tm.status().get("state") or "") if tm is not None else ""
-                if state == "failed" and now - self._attempt_started >= self.TOR_AUTO_FAIL_GRACE_SEC:
+                if (kind == nova_vpn_slots.SECONDARY_TOR and state == "failed"
+                        and now - self._attempt_started >= self.TOR_AUTO_FAIL_GRACE_SEC):
                     self._advance_locked(now, generation, "Tor не подключился ни одним способом")
 
         def _schedule_trial(self, now):
@@ -8022,7 +8060,7 @@ try:
             self._index = (self._index + 1) % len(self._attempts)
             attempt = self._attempts[self._index]
             self._reset_trial()
-            if attempt[0] == nova_vpn_slots.SECONDARY_TOR:
+            if attempt[0] != nova_vpn_slots.SECONDARY_OPERA:
                 self._schedule_trial(now)
             self._generation += 1
             self._activate_async(self._generation, attempt, why)
@@ -8942,12 +8980,33 @@ try:
                     {d for d in _ai_set if _covered_by(d, _second_set)}
                     | {d for d in _second_set if _covered_by(d, _ai_set)}
                 )
+                # Google AI hosts are listed exactly (gemini.google.com,
+                # aistudio.google.com, ...), while list/second.txt has only the
+                # parent gemini.google. matchDomain does not treat the parent as
+                # covering the .com host, so the page fell through to
+                # foreign_default — the primary RU MASQUE — and Google saw a
+                # Russian address. Route these exact AI hosts through the
+                # secondary (foreign) VPN as well.
+                _google_ai_hosts = {
+                    "gemini.google.com",
+                    "aistudio.google.com",
+                    "ai.google.dev",
+                    "labs.google",
+                    "flow.google.com",
+                    "jules.google.com",
+                    "notebook.google.com",
+                    "notebooklm.google.com",
+                    "aisandbox-pa.googleapis.com",
+                    "robinfrontend-pa.googleapis.com",
+                    "alkalimakersuite-pa.clients6.google.com",
+                }
+                ai_second_domains |= (_ai_set & _google_ai_hosts)
                 ai_second_js = "{" + ",".join(f'"{d}":1' for d in sorted(ai_second_domains)) + "}"
                 # Без хвоста DIRECT: один отказ second — и Chrome на 5 минут пускал бы все ИИ-домены напрямую (G97).
                 ai_second_route = (secondary_route if secondary_active else "DIRECT")
                 # Выход second заблокирован сервисом по региону (ai_region_worker пробует API
                 # через него) — тогда напрямую по winws, но только если имя этого сервиса
-                # разворачивает DNS-разблокировщик (DNS-AI, xbox-dns, comss, geohide: системный
+                # разворачивает DNS-разблокировщик (DNS-AI, comss, geohide: системный
                 # DNS или правило NRPT). Без разблокировщика прямой путь из России тоже
                 # упрётся в регион, и second остаётся лучшим из двух.
                 ai_region_direct = set()
@@ -9898,6 +9957,12 @@ function FindProxyForURLEx(url, host) {{
             ("relay.nova-app.eu", 2053),
         )
         API_RELAY_PLATFORM = "pc"
+        # The relay key in profiles/opera_relay.key was issued for upstream
+        # 1.43.2. Fork version bumps (1.43.2.N) only change the product version
+        # and must not change the relay login: the server retires the username
+        # and key together, so `nova-pc-1.43.2.4` answers 407 outdated-client.
+        # Pin the relay identity until a new key is deployed for the fork.
+        API_RELAY_KEY_VERSION = "1.43.2"
         _api_relay_password_cache = []
 
         @staticmethod
@@ -9929,7 +9994,9 @@ function FindProxyForURLEx(url, host) {{
               An import would hand back the value frozen at build time — the stale
               one — which is exactly the mismatch that makes the relay look dead.
             """
-            version = str(globals().get("CURRENT_VERSION", "") or "").strip()
+            version = str(getattr(cls, "API_RELAY_KEY_VERSION", "") or "").strip()
+            if not version:
+                version = str(globals().get("CURRENT_VERSION", "") or "").strip()
             if not version:
                 # Silence here would be indistinguishable from "the relay is
                 # down": `api_relays()` returns an empty tuple, the bootstrap
@@ -10119,6 +10186,29 @@ function FindProxyForURLEx(url, host) {{
                 return endpoint
             except:
                 return None
+
+        def _published_endpoints(self):
+            """Endpoints for this region from the published feed (1.44).
+
+            The feed is cached for an hour, a failed fetch is retried after 15 minutes, so a dead
+            GitHub costs one timeout. These addresses are tried before discover: from Russia the
+            discover call often returns endpoints that cannot be dialed at all.
+            """
+            now = time.time()
+            feed = getattr(self, "_endpoint_feed", None)
+            checked = float(getattr(self, "_endpoint_feed_checked_ts", 0.0) or 0.0)
+            stale = (now - checked >= 3600.0) if feed else (now - checked >= 900.0)
+            if stale:
+                feed = fetch_endpoint_feed(timeout=2.5)
+                self._endpoint_feed = feed
+                self._endpoint_feed_checked_ts = now
+            country = str(getattr(self, "country", "") or "").upper()
+            published = endpoints_for_country(feed, country)
+            if not published and country and country != "EU":
+                # Регион не опубликован (например, US в ленте отсутствует) — берём EU-пул,
+                # он ближе и стабильнее, чем один недоступный edge из discover.
+                published = endpoints_for_country(feed, "EU")
+            return published
 
         def _save_cached_endpoint(self, endpoint):
             try:
@@ -10571,6 +10661,8 @@ function FindProxyForURLEx(url, host) {{
                 attempts = []
                 if cached_endpoint:
                     attempts.append(("cached", cached_endpoint, 2.5, None))
+                for _published in self._published_endpoints():
+                    attempts.append(("published", _published, 4.0, None))
                 for _api_proxy in api_bootstrap_proxies:
                     attempts.append(("discover-api-proxy", None, 6.5, _api_proxy))
                 attempts.append(("discover", None, 6.5, None))
@@ -15021,7 +15113,7 @@ function FindProxyForURLEx(url, host) {{
                     def enum_windows_proc(hwnd, lParam):
                         window_text = ctypes.create_unicode_buffer(512)
                         ctypes.windll.user32.GetWindowTextW(hwnd, window_text, 512)
-                        if f"Nova v" in window_text.value:
+                        if ("OBNOVA v" in window_text.value) or ("OBNOVA v" in window_text.value):
                             ctypes.windll.user32.ShowWindow(hwnd, 9) # SW_RESTORE
                             ctypes.windll.user32.SetForegroundWindow(hwnd)
                             return False # Stop enumeration
@@ -15055,7 +15147,7 @@ function FindProxyForURLEx(url, host) {{
                 msg = "Перезапуск не смог получить mutex экземпляра Nova.\n\nЗавершите зависшие процессы pythonw.exe / Nova.exe и запустите Nova снова."
             else:
                 msg = "Программа уже запущена!\n\nПроверьте системный трей (возле часов) или завершите процессы pythonw.exe / Nova.exe в Диспетчере задач."
-            messagebox.showerror("Nova - Ошибка запуска", msg)
+            messagebox.showerror("OBNOVA - Ошибка запуска", msg)
             temp_root.destroy()
         except: pass
         finally:
@@ -15076,41 +15168,36 @@ function FindProxyForURLEx(url, host) {{
 
     NOVA_NRPT_TAG = "NOVA_DNS_UNBLOCK"
 
-    # Каскад резолверов в порядке, заданном владельцем: dns-ai, затем xbox-dns,
-    # затем comss и geohide. Windows опрашивает серверы правила по порядку и
-    # уходит к следующему по таймауту, то есть сам список и есть каскад.
+    # Каскад резолверов в порядке, заданном владельцем: dns-ai, затем comss,
+    # затем geohide. xbox-dns.ru убран — сервис больше не работает. Windows
+    # опрашивает серверы правила по порядку и уходит к следующему по таймауту,
+    # то есть сам список и есть каскад.
     #
     # Замерено, а не предположено (nslookup к каждому адресу, UDP/53):
-    #   dns-ai   192.144.59.14 и 186.246.49.127 — таймаут на chatgpt.com,
+    #   dns-ai   (адреса сервиса: endpoints.json, serial 7 — spb7 194.87.196.13 и
+    #            msk7 45.151.102.219 с их IPv6; прежние msk3 192.144.59.14 и
+    #            spb1 186.246.49.127 сняты, 2026-10) — таймаут на chatgpt.com,
     #            example.com и google.com. Обычного DNS у сервиса нет: система
     #            ходит к нему по DoH (Get-DnsClientDohServerAddress отдаёт
     #            шаблон https://dns.dns-ai.ru/dns-query, AutoUpgrade=True,
-    #            AllowFallbackToUdp=False). В каскаде он стоит первым, но на
-    #            машине без этого шаблона ответ придёт уже от xbox-dns.
-    #   xbox-dns 111.88.96.50 -> 2a00:ab00:533:6::100 (свой фронтенд)
+    #            AllowFallbackToUdp=False). В каскаде он стоит первым; на машине
+    #            без этого шаблона ответ придёт от comss или geohide.
     #   comss    83.220.169.155 и 212.109.195.93 -> 91.207.75.110
     #   geohide  45.155.204.190 -> 193.233.112.67, 37.230.192.51 -> 46.8.158.6
     NOVA_NRPT_NAMESERVER_CASCADE = (
         ("dns-ai.ru", (
-            "192.144.59.14",
-            "186.246.49.127",
-            "2a0d:8480:0:67c::14",
-            "2a0a:2b41:0:500d::53",
-        )),
-        ("xbox-dns.ru", (
-            "111.88.96.54",
-            "111.88.96.55",
-            "2a00:ab00:1233:26::50",
-            "2a00:ab00:1233:26::51",
+            "194.87.196.13",
+            "45.151.102.219",
+            "2a00:b700:5::3:62",
+            "2a12:5940:d4ef::219",
         )),
         ("comss.one", (
             "83.220.169.155",
             "212.109.195.93",
         )),
-        ("geohide.ru", (
-            "45.155.204.190",
-            "37.230.192.51",
-        )),
+        # Адреса GeoHide берутся из hosts-файла сервиса (resources/nova_dns_endpoints.py):
+        # зашитый список устаревает, сервис меняет его без предупреждения.
+        ("geohide.ru", tuple(nova_dns_endpoints.servers_for_startup(get_base_dir()))),
     )
 
     # Те же адреса dns-ai.ru, но как множество: по ним проверяется, не выбрал ли
@@ -17263,7 +17350,7 @@ function FindProxyForURLEx(url, host) {{
         # restart_nova moved to GLOBAL scope to be accessible from all menus
         pass 
         
-        context_menu.add_command(label="Перезапустить Nova", command=restart_nova)
+        context_menu.add_command(label="Перезапустить OBNOVA", command=restart_nova)
 
         log_text_widget.tag_bind("clickable_cmd", "<Button-1>", copy_command)
         def show_log_context_menu(event):
@@ -18111,7 +18198,7 @@ function FindProxyForURLEx(url, host) {{
                 image = Image.new('RGB', (64, 64), color = (73, 109, 137))
 
             menu = (pystray.MenuItem('Открыть', on_tray_open, default=True), pystray.MenuItem('Выход', on_tray_quit))
-            TRAY_ICON = pystray.Icon("name", image, "Nova", menu)
+            TRAY_ICON = pystray.Icon("name", image, "OBNOVA", menu)
             TRAY_ICON.run()
         except Exception as e:
             safe_trace(f"Tray Error: {e}")
@@ -26042,7 +26129,7 @@ function FindProxyForURLEx(url, host) {{
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
 
-    def native_message_box(text, title="Nova", flags=0):
+    def native_message_box(text, title="OBNOVA", flags=0):
         try:
             return ctypes.windll.user32.MessageBoxW(0, text, title, flags | 0x40000)
         except:
@@ -26247,13 +26334,13 @@ function FindProxyForURLEx(url, host) {{
         expected_hash = manifest.get("sha256")
 
         if not download_url:
-            native_message_box("В manifest обновления отсутствует ссылка на установщик.", "Nova - Обновление", 0x10)
+            native_message_box("В manifest обновления отсутствует ссылка на установщик.", "OBNOVA - Обновление", 0x10)
             return
 
         try:
             import requests
         except ImportError as e:
-            native_message_box(f"Не удалось импортировать requests.\n\n{e}", "Nova - Обновление", 0x10)
+            native_message_box(f"Не удалось импортировать requests.\n\n{e}", "OBNOVA - Обновление", 0x10)
             return
 
         temp_dir = os.path.join(get_base_dir(), "temp")
@@ -26328,7 +26415,7 @@ function FindProxyForURLEx(url, host) {{
                 pass
             if log_func:
                 log_func(f"[Update] Не удалось скачать установщик: {e}")
-            native_message_box(f"Не удалось скачать установщик обновления.\n\n{e}", "Nova - Обновление", 0x10)
+            native_message_box(f"Не удалось скачать установщик обновления.\n\n{e}", "OBNOVA - Обновление", 0x10)
             return
 
         if expected_hash:
@@ -26343,7 +26430,7 @@ function FindProxyForURLEx(url, host) {{
                     log_func("[Update] ОШИБКА: контрольная сумма установщика не совпала.")
                 native_message_box(
                     "Контрольная сумма установщика не совпала.\n\nОбновление отменено.",
-                    "Nova - Обновление",
+                    "OBNOVA - Обновление",
                     0x10,
                 )
                 return
@@ -26366,7 +26453,7 @@ function FindProxyForURLEx(url, host) {{
             set_update_state(installing=False)
             if log_func:
                 log_func(f"[Update] Не удалось запустить установщик: {e}")
-            native_message_box(f"Не удалось запустить установщик.\n\n{e}", "Nova - Обновление", 0x10)
+            native_message_box(f"Не удалось запустить установщик.\n\n{e}", "OBNOVA - Обновление", 0x10)
             return
 
         if log_func:
@@ -26394,7 +26481,7 @@ function FindProxyForURLEx(url, host) {{
 
         state = get_update_state()
         if state.get("installing") or state.get("checking"):
-            native_message_box("Проверка или загрузка обновления уже выполняется.", "Nova - Обновление", 0x40)
+            native_message_box("Проверка или загрузка обновления уже выполняется.", "OBNOVA - Обновление", 0x40)
             return
 
         def _worker():
@@ -26402,16 +26489,16 @@ function FindProxyForURLEx(url, host) {{
             manifest, error = fetch_update_manifest()
             if error:
                 set_update_state(checking=False)
-                native_message_box(f"Не удалось проверить обновление.\n\n{error}", "Nova - Обновление", 0x10)
+                native_message_box(f"Не удалось проверить обновление.\n\n{error}", "OBNOVA - Обновление", 0x10)
                 return
 
             if not manifest.get("available"):
-                native_message_box(f"У вас уже актуальная версия Nova ({CURRENT_VERSION}).", "Nova - Обновление", 0x40)
+                native_message_box(f"У вас уже актуальная версия Nova ({CURRENT_VERSION}).", "OBNOVA - Обновление", 0x40)
                 return
 
             answer = native_message_box(
                 f"Доступна новая версия Nova {manifest['version']}.\n\nСкачать установщик и запустить обновление?",
-                "Nova - Обновление",
+                "OBNOVA - Обновление",
                 0x24,
             )
             if answer != 6:
@@ -29490,7 +29577,7 @@ function FindProxyForURLEx(url, host) {{
         # === НЕМЕДЛЕННОЕ обновление UI ===
         if root and not restart_mode:
             root.after(0, lambda: btn_toggle.config(text="ПОДКЛЮЧИТЬ"))
-            # restart_nova() (ПКМ -> "Перезапустить Nova") calls this same full
+            # restart_nova() (ПКМ -> "Перезапустить OBNOVA") calls this same full
             # stop before killing the process; without this check its own
             # "ПЕРЕЗАПУСК" label got overwritten back to "ОСТАНОВЛЕНО" here a
             # moment later.
@@ -29748,7 +29835,7 @@ function FindProxyForURLEx(url, host) {{
                     except: pass
 
                     if is_vpn_active: # Check VPN again in worker
-                         root.after(0, lambda: messagebox.showinfo("VPN активен", "Nova не может быть запущен, пока активно VPN-соединение."))
+                         root.after(0, lambda: messagebox.showinfo("VPN активен", "OBNOVA не может быть запущен, пока активно VPN-соединение."))
                     else:
                         start_nova_service()
                         # Wait for process to appear (max 15s)
@@ -29767,7 +29854,7 @@ function FindProxyForURLEx(url, host) {{
 
     def toggle_service():
         if is_vpn_active:
-            messagebox.showinfo("VPN активен", "Nova не может быть запущен, пока активно VPN-соединение.")
+            messagebox.showinfo("VPN активен", "OBNOVA не может быть запущен, пока активно VPN-соединение.")
             return
             
         # Anti-Spam: Ignore if queue has > 1 pending items (Current action + 1 pending is Max)
@@ -31203,7 +31290,7 @@ function FindProxyForURLEx(url, host) {{
                         "Рекомендуется создать отдельную папку для программы.\n\n"
                         "Создать папку 'Nova' и запустить программу оттуда?"
                     )
-                    ret = ctypes.windll.user32.MessageBoxW(0, msg, "Nova - Первый запуск", 3 | 48 | 0x40000)
+                    ret = ctypes.windll.user32.MessageBoxW(0, msg, "OBNOVA - Первый запуск", 3 | 48 | 0x40000)
                     
                     if ret == 6: # IDYES - Relocate
                         target_dir = os.path.join(base_dir, "Nova")
@@ -31327,6 +31414,16 @@ function FindProxyForURLEx(url, host) {{
 
         except: pass
 
+        if "--quit" in sys.argv:
+            # Второй запуск: попросить текущий экземпляр выйти штатным on_closing.
+            try:
+                os.makedirs(os.path.join(get_base_dir(), "temp"), exist_ok=True)
+                with open(os.path.join(get_base_dir(), "temp", "quit.request"), "w", encoding="utf-8") as _qf:
+                    _qf.write(str(time.time()))
+            except Exception:
+                pass
+            sys.exit(0)
+
         app_mutex = check_single_instance()
 
         try: ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Nova.App.Main.1")
@@ -31335,7 +31432,7 @@ function FindProxyForURLEx(url, host) {{
         _close_splash()  # Must destroy splash Tk() before creating main Tk()
         root = tk.Tk()
         root.withdraw()
-        root.title(f"Nova v{CURRENT_VERSION}")
+        root.title(f"OBNOVA v{CURRENT_VERSION}")
         # Ctrl+V/C/X at any keyboard layout and a right-click menu in every text field.
         try: nova_tk_clipboard.install(root)
         except Exception: pass
@@ -31343,6 +31440,19 @@ function FindProxyForURLEx(url, host) {{
         except: pass
         root.resizable(False, False)
         root.configure(bg=COLOR_BG)
+
+        def _quit_watcher():
+            path = os.path.join(get_base_dir(), "temp", "quit.request")
+            while not globals().get("is_closing"):
+                time.sleep(1.0)
+                if os.path.exists(path):
+                    with contextlib.suppress(Exception):
+                        os.remove(path)
+                    with contextlib.suppress(Exception):
+                        root.after(0, on_closing)
+                    return
+
+        threading.Thread(target=_quit_watcher, daemon=True, name="NovaQuitWatcher").start()
         
         # Применяем тему Windows к заголовку окна
         try:
@@ -33537,7 +33647,7 @@ function FindProxyForURLEx(url, host) {{
         # кнопка «Профили», и второй вход в то же окно ничего не добавлял.
         # toggle_profiles_window_ui никуда не делся - он же открывает окно с
         # кнопки и из меню слота VPN, а возврат пункта сюда это одна строка.
-        main_context_menu.add_command(label="Перезапустить Nova", command=restart_nova)
+        main_context_menu.add_command(label="Перезапустить OBNOVA", command=restart_nova)
         # Пункт «Сообщить о заблокированном сайте…» снят по просьбе владельца.
         # Сам report_blocked_site оставлен намеренно: это единственный способ
         # запустить классификатор Cloudflare (S15), и возврат пункта — ровно

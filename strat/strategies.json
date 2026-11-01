@@ -89,15 +89,14 @@
     "boost_Slow_DPI": [
         "--filter-tcp=80,443",
         "--dpi-desync=desync",
-        "--dpi-desync-any-proto",
+        "--dpi-desync-any-protocol=1",
         "--dpi-desync-repeats=5",
         "--dpi-desync-fooling=badseq,badsum"
     ],
     "boost_DPI_16KB": [
         "--filter-tcp=80,443",
         "--dpi-desync=multisplit,disorder",
-        "--dpi-desync-multisplit-threshold=1",
-        "--dpi-desync-multisplit-re-inject",
+        "--dpi-desync-split-pos=1",
         "--dpi-desync-fooling=badseq",
         "--dpi-desync-repeats=8"
     ],
@@ -113,7 +112,7 @@
         "--filter-tcp=80,443",
         "--dpi-desync=split,multisplit",
         "--dpi-desync-split-pos=1,2,3",
-        "--dpi-desync-any-proto",
+        "--dpi-desync-any-protocol=1",
         "--dpi-desync-repeats=6",
         "--dpi-desync-fooling=badseq,badsum"
     ],
