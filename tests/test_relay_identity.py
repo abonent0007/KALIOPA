@@ -34,16 +34,17 @@ class RelayIdentityTests(unittest.TestCase):
             "CURRENT_VERSION должен использоваться только после API_RELAY_KEY_VERSION",
         )
 
-    def test_fork_version_keeps_upstream_prefix(self):
+    def test_fork_version_is_not_relay_identity(self):
+        # Ключ релея выпущен для upstream 1.43.2 и не меняется вместе с базой форка:
+        # после мержа 1.44.2 версия форка — 1.44.2.N, а логин остаётся nova-pc-1.43.2.
         sys_path_version = re.search(
             r'CURRENT_VERSION = "([^"]+)"',
             (BASE_DIR / "resources" / "nova_metadata.py").read_text(encoding="utf-8"),
         ).group(1)
         relay_version = re.search(r'API_RELAY_KEY_VERSION = "([^"]+)"', NOVA_PY).group(1)
-        self.assertTrue(
-            sys_path_version.startswith(relay_version + "."),
-            "версия форка должна быть <upstream-relay-version>.N",
-        )
+        self.assertEqual("1.43.2", relay_version)
+        self.assertNotEqual(relay_version, sys_path_version)
+        self.assertRegex(sys_path_version, r"^\d+\.\d+\.\d+\.\d+$")
 
 
 if __name__ == "__main__":
