@@ -10,39 +10,28 @@
 в команду не попадает произвольная строка.
 """
 
-import json
+import os
 import re
-import subprocess
 
-DEFAULT_MAX_AGE_SEC = 600
+import nova_win_ps
+
+try:
+    DEFAULT_MAX_AGE_SEC = max(60, int(os.environ.get("NOVA_PROCESS_ORPHAN_AGE", "600") or 600))
+except ValueError:
+    DEFAULT_MAX_AGE_SEC = 600
 SAFE_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
-DEFAULT_TIMEOUT = 25.0
+DEFAULT_TIMEOUT = nova_win_ps.DEFAULT_TIMEOUT
 
 __all__ = ["find_orphans", "kill_orphans"]
 
 
-def _powershell(command, timeout=DEFAULT_TIMEOUT):
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    try:
-        proc = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
-            capture_output=True, text=True, timeout=timeout, creationflags=flags,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise RuntimeError("powershell не запущен: %s" % exc) from exc
-    if proc.returncode != 0:
-        raise RuntimeError((proc.stderr or proc.stdout or "powershell failed").strip()[:300])
-    return proc.stdout or ""
+def _powershell(command, timeout=DEFAULT_TIMEOUT, runner=None):
+    run = runner or nova_win_ps.run
+    return run(command, timeout=timeout)
 
 
 def _rows(output):
-    text = str(output or "").strip()
-    if not text:
-        return []
-    data = json.loads(text)
-    if isinstance(data, dict):
-        data = [data]
-    return [row for row in data if isinstance(row, dict)]
+    return nova_win_ps.json_rows(output)
 
 
 def find_orphans(names=("winws_test.exe",), max_age_sec=DEFAULT_MAX_AGE_SEC, runner=None):

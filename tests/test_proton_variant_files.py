@@ -50,6 +50,18 @@ class VariantFileTests(unittest.TestCase):
     def test_missing_endpoint_gives_no_variants(self):
         self.assertEqual([], nova_proton.variant_files("NL-FREE-1.conf", "[Interface]\n", 443))
 
+    def test_missing_variants_module_degrades_to_no_variants(self):
+        with mock.patch.object(nova_proton, "nova_proton_variants", None):
+            self.assertEqual(
+                [], nova_proton.variant_files("NL-FREE-1.conf", CONF.format(port=443), 443)
+            )
+
+    def test_variant_count_comes_from_the_environment(self):
+        with mock.patch.dict(os.environ, {"NOVA_PROTON_VARIANT_COUNT": "1"}):
+            self.assertEqual(
+                [], nova_proton.variant_files("NL-FREE-1.conf", CONF.format(port=443), 443)
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

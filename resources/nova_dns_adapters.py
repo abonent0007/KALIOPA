@@ -12,10 +12,11 @@ PowerShell вызывается без `shell=True`; индекс адаптер
 import ipaddress
 import json
 import os
-import subprocess
+
+import nova_win_ps
 
 SNAPSHOT_FILENAME = "dns_adapters.json"
-DEFAULT_TIMEOUT = 25.0
+DEFAULT_TIMEOUT = nova_win_ps.DEFAULT_TIMEOUT
 
 __all__ = [
     "SNAPSHOT_FILENAME", "snapshot", "save", "load", "apply", "restore",
@@ -23,18 +24,9 @@ __all__ = [
 ]
 
 
-def _powershell(command, timeout=DEFAULT_TIMEOUT):
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    try:
-        proc = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
-            capture_output=True, text=True, timeout=timeout, creationflags=flags,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise RuntimeError("powershell не запущен: %s" % exc) from exc
-    if proc.returncode != 0:
-        raise RuntimeError((proc.stderr or proc.stdout or "powershell failed").strip()[:300])
-    return proc.stdout or ""
+def _powershell(command, timeout=DEFAULT_TIMEOUT, runner=None):
+    run = runner or nova_win_ps.run
+    return run(command, timeout=timeout)
 
 
 def snapshot(runner=None):
@@ -45,12 +37,7 @@ def snapshot(runner=None):
         "Where-Object { $_.ServerAddresses } | "
         "Select-Object InterfaceIndex,InterfaceAlias,ServerAddresses | ConvertTo-Json -Compress"
     )
-    text = str(output or "").strip()
-    if not text:
-        return []
-    data = json.loads(text)
-    if isinstance(data, dict):
-        data = [data]
+    data = nova_win_ps.json_rows(output)
     rows = []
     for row in data:
         if not isinstance(row, dict):

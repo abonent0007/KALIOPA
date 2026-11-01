@@ -1756,6 +1756,10 @@ _WS_POOL = _TelegramWsPool()
 
 TRAFFIC_LOG_INTERVAL = _env_float("NOVA_TG_RELAY_TRAFFIC_LOG_INTERVAL", 60.0, minimum=5.0)
 PROBE_DIAG_LOG_INTERVAL = _env_float("NOVA_TG_RELAY_PROBE_DIAG_INTERVAL", 30.0, minimum=5.0)
+# Egress kinds whose HTTP CONNECT cannot carry arbitrary TCP. Tor answers 502 to
+# MTProto; Opera hangs on a Telegram DC and rejects port 25 with 502.
+_MT_PROTO_BLOCKED_EGRESS = frozenset({"tor", "opera"})
+_PROFILE_EGRESS = "profile"
 _traffic_agg: Dict[str, Dict[str, float]] = {}
 
 
@@ -3878,12 +3882,12 @@ class TelegramTransparentRelayServer:
                     if str(attempt.get("label") or "").strip().lower() != "opera-http":
                         return True
                     egress = str(attempt.get("egress") or "").strip().lower()
-                    if egress in ("tor", "opera"):
+                    if egress in _MT_PROTO_BLOCKED_EGRESS:
                         # Tor-HTTP отвечает 502, Opera-прокси не пропускает
                         # произвольный TCP (замер: CONNECT к DC Telegram висит
                         # до таймаута, порт 25 — 502). MTProto им не несём.
                         return False
-                    if egress == "profile":
+                    if egress == _PROFILE_EGRESS:
                         # У своего профиля HTTP-inbound от xray: TCP проходит.
                         return True
                     return _local_port_open(1371)

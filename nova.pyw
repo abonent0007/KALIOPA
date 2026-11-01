@@ -10102,8 +10102,8 @@ function FindProxyForURLEx(url, host) {{
                 if int(rc) == self.OPERA_SELECTION_TIMEOUT_RC:
                     if not self._selection_timeout_seen:
                         self.log_func(
-                            "[EU] Замер скорости эндпоинтов не уложился в таймаут. "
-                            "Дальше берём первый выданный эндпоинт без замера."
+                            "[EU] Замер скорости Opera не уложился в таймаут. "
+                            "Следующий запуск повторит замер."
                         )
                     self._selection_timeout_seen = True
             except:
@@ -10747,12 +10747,17 @@ function FindProxyForURLEx(url, host) {{
                     # у части провайдеров режется, отчего замер и не укладывается.
                     measuring = not override_endpoint
                     if measuring:
+                        try:
+                            _selection_timeout = max(3, min(30, int(float(
+                                os.environ.get("NOVA_OPERA_SELECTION_TIMEOUT", "10") or 10))))
+                        except (TypeError, ValueError):
+                            _selection_timeout = 10
                         selection_args = [
                             "-server-selection", "fastest",
-                            "-server-selection-timeout", "10s",
+                            "-server-selection-timeout", f"{_selection_timeout}s",
                         ]
                     else:
-                        # Эндпоинт задан явно либо замер уже подводил — берём первый.
+                        # Эндпоинт задан явно (кэш/лента) — берём его без замера.
                         selection_args = ["-server-selection", "first"]
                     cmd = [
                         self.exe_path,

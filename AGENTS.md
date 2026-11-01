@@ -169,3 +169,7 @@ foreign-default (наш патч, по умолчанию VPN)`.
 - Не коммитить секреты/ключи; не публиковать `bin/`; соблюдать `THIRD_PARTY_NOTICES.md`.
 - Не менять дефолты маршрутизации «по вкусу»: сначала замеры (blockcheck/live-probes), потом правки.
 - Трудные задачи: сначала второе мнение (Council/Google AI), затем локальная верификация.
+
+<!-- Added: 2026-11-01 -->
+## ChatGPT / Opera routing (2026-11-01)
+ChatGPT web is unreachable via Cloudflare WARP, Tor and direct RU (403), but loads in a real headed browser through the Opera VPN secondary slot (EU, exit SE). Nova must keep `secondary.mode=opera`, `opera_region=EU`, and `routes.ai_apps=opera`; Opera bootstrap must skip dead relays, try direct discover before the published feed, and always use `-server-selection fastest`. MTProto must never use `opera-http` or Tor HTTP egress. Full measurements: docs/agents/chatgpt-opera.md; build state: docs/agents/state-2026-11-01.md.

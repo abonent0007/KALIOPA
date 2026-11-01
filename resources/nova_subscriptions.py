@@ -709,6 +709,31 @@ def refresh(base_dir, record, *, proxies=(), direct=True, log=None, fetcher=None
     return ("updated" if imported else "unchanged"), record, stats
 
 
+def _probed_add_identities(add_identities, by_identity, say, title):
+    """Пробует новые узлы и возвращает те, что отвечают.
+
+    Проба — вспомогательный фильтр, а не условие обновления подписки: любая её
+    ошибка (нет прав, кончились потоки, сломался модуль) оставляет все узлы,
+    иначе один сбой превращал бы обновление списка в пустую подписку.
+    """
+    if nova_vless_preflight is None or not nova_vless_preflight.enabled():
+        return list(add_identities)
+    add_nodes = [by_identity[identity] for identity in add_identities if identity in by_identity]
+    if not add_nodes:
+        return list(add_identities)
+    try:
+        alive, rejected = nova_vless_preflight.probe_nodes(add_nodes)
+    except Exception as exc:
+        say("[Подписки] «%s»: проба узлов не удалась (%s) — беру все." % (title, exc))
+        return list(add_identities)
+    if not rejected:
+        return list(add_identities)
+    alive_ids = {node.identity for node in alive}
+    say("[Подписки] «%s»: отсеяно %d из %d новых узлов — endpoint не ответил."
+        % (title, len(rejected), len(add_nodes)))
+    return [identity for identity in add_identities if identity in alive_ids]
+
+
 def _apply_vless(base_dir, record, nodes, say, title):
     """The VLESS half of `refresh`: diff against what this subscription brought last time.
 
@@ -740,14 +765,7 @@ def _apply_vless(base_dir, record, nodes, say, title):
 
     # Новые узлы пробуются до записи: мёртвый endpoint иначе займёт место в квоте
     # и будет висеть 12 секунд на каждом подключении, пока карантин его не уберёт.
-    add_nodes = [by_identity[identity] for identity in plan["add"] if identity in by_identity]
-    if add_nodes and nova_vless_preflight is not None and nova_vless_preflight.enabled():
-        alive, rejected = nova_vless_preflight.probe_nodes(add_nodes)
-        if rejected:
-            alive_ids = {node.identity for node in alive}
-            plan["add"] = [identity for identity in plan["add"] if identity in alive_ids]
-            say("[Подписки] «%s»: отсеяно %d из %d новых узлов — endpoint не ответил."
-                % (title, len(rejected), len(add_nodes)))
+    plan["add"] = _probed_add_identities(plan["add"], by_identity, say, title)
 
     removed = 0
     for profile_id in plan["remove"]:

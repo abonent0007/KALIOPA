@@ -13,6 +13,7 @@
 import socket
 import struct
 import threading
+import time
 
 import httpx
 
@@ -76,6 +77,7 @@ class DohResolver:
         self._sock = None
         self._thread = None
         self._stop = threading.Event()
+        self._start_error = None
 
     # -- транспорт ---------------------------------------------------------
     def _http(self):
@@ -111,10 +113,17 @@ class DohResolver:
 
     # -- сервер ------------------------------------------------------------
     def _serve(self):
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._sock.bind((self.host, self.port))
-        self._sock.settimeout(0.5)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((self.host, self.port))
+            sock.settimeout(0.5)
+        except Exception:
+            sock.close()
+            raise
+        # Публикуется только после успешного bind: `start()` ждёт именно этот
+        # момент, иначе занятый порт выглядел бы как рабочий резолвер.
+        self._sock = sock
         while not self._stop.is_set():
             try:
                 query, addr = self._sock.recvfrom(4096)
@@ -127,6 +136,12 @@ class DohResolver:
             threading.Thread(target=self._answer, args=(query, addr), daemon=True,
                              name="DohResolverQuery").start()
 
+    def _serve_guarded(self):
+        try:
+            self._serve()
+        except BaseException as exc:  # bind/recv failure must reach start()
+            self._start_error = exc
+
     def _answer(self, query, addr):
         try:
             self._sock.sendto(self.resolve(query), addr)
@@ -137,8 +152,22 @@ class DohResolver:
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._serve, daemon=True, name="DohResolver")
+        self._start_error = None
+        self._thread = threading.Thread(target=self._serve_guarded, daemon=True, name="DohResolver")
         self._thread.start()
+        # `_serve` биндит сокет в потоке. Без этой проверки занятый порт 53
+        # выглядел бы как успешный старт: адаптеры уже перевели бы DNS на
+        # 127.0.0.1, а слушать его было бы некому.
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            if self._sock is not None:
+                return
+            if self._start_error is not None or not self._thread.is_alive():
+                break
+            time.sleep(0.02)
+        error = self._start_error
+        self.stop()
+        raise OSError("DoH-резолвер не занял %s:%d" % (self.host, self.port)) from error
 
     def stop(self):
         self._stop.set()

@@ -60,7 +60,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-import nova_proton_variants
+try:
+    import nova_proton_variants
+except ImportError:  # pragma: no cover - сборка без модуля: работаем без вариантов
+    nova_proton_variants = None
 
 # --- API -------------------------------------------------------------------------------------
 
@@ -490,18 +493,28 @@ def order_nodes(nodes, liveness=None):
     return ordered
 
 
-VARIANT_PORTS = nova_proton_variants.DEFAULT_PORTS
+VARIANT_PORTS = nova_proton_variants.DEFAULT_PORTS if nova_proton_variants is not None else (443, 1194, 4500)
 
 
 def variants_enabled():
     """`NOVA_PROTON_VARIANTS=0` keeps the old one-profile-per-node behaviour."""
+    if nova_proton_variants is None:
+        return False
     raw = os.environ.get("NOVA_PROTON_VARIANTS")
     if raw is None:
         return True
     return str(raw).strip().lower() not in {"0", "false", "no", "off"}
 
 
-def variant_files(filename, conf_text, base_port, count=3):
+def variant_count():
+    """Сколько конфигов на узел: `NOVA_PROTON_VARIANT_COUNT`, по умолчанию 3."""
+    try:
+        return max(1, min(5, int(os.environ.get("NOVA_PROTON_VARIANT_COUNT", "3") or 3)))
+    except (TypeError, ValueError):
+        return 3
+
+
+def variant_files(filename, conf_text, base_port, count=None):
     """Extra files for one node: the same key and peer on the other known ports.
 
     A second port is the cheapest second chance at a handshake: node, key and peer
@@ -510,7 +523,7 @@ def variant_files(filename, conf_text, base_port, count=3):
     still recognise them.
     """
     try:
-        limit = max(1, int(count))
+        limit = variant_count() if count is None else max(1, int(count))
     except (TypeError, ValueError):
         limit = 3
     if limit <= 1 or not variants_enabled():

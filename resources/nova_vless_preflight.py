@@ -15,8 +15,23 @@ import os
 import socket
 import ssl
 
-DEFAULT_TIMEOUT = 2.0
-DEFAULT_WORKERS = 8
+
+def _env_float(name, default, minimum=0.5):
+    try:
+        return max(float(minimum), float(os.environ.get(name, str(default)) or default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _env_int(name, default, minimum=1, maximum=32):
+    try:
+        return max(int(minimum), min(int(maximum), int(os.environ.get(name, str(default)) or default)))
+    except (TypeError, ValueError):
+        return int(default)
+
+
+DEFAULT_TIMEOUT = _env_float("NOVA_VLESS_PREFLIGHT_TIMEOUT", 2.0)
+DEFAULT_WORKERS = _env_int("NOVA_VLESS_PREFLIGHT_WORKERS", 8)
 
 __all__ = ["enabled", "tls_enabled", "probe_node", "probe_nodes"]
 

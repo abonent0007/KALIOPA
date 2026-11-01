@@ -18,7 +18,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 if (-not $Source) {
-    $Source = Join-Path "C:\Users\User\Documents\build\Inno" "v$Version\Nova"
+    $buildRoot = Join-Path $env:USERPROFILE "Documents\build\Inno"
+    $Source = Join-Path $buildRoot "v$Version\Nova"
 }
 if (-not (Test-Path (Join-Path $Source "Nova.exe"))) {
     throw "Staging not found: $Source"

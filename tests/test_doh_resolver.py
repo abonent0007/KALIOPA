@@ -68,6 +68,12 @@ class ResolveTests(unittest.TestCase):
         answer = resolver.resolve(doh.build_query("example.com"))
         self.assertEqual(0x02, answer[3] & 0x0F)
 
+    def test_start_reports_a_port_that_cannot_be_bound(self):
+        resolver = doh.DohResolver(port=70000)
+        with self.assertRaises(OSError):
+            resolver.start()
+        self.assertIsNone(resolver._thread)
+
 
 if __name__ == "__main__":
     unittest.main()

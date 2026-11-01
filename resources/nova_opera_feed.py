@@ -9,6 +9,7 @@ Pure parsing lives here so tests can import it; the fetch is the only network pa
 """
 
 import json
+import os
 import urllib.request
 
 FEED_URLS = (
@@ -18,6 +19,13 @@ FEED_URLS = (
 # Same regions opera-proxy takes via -country; US is the same exit as AM.
 KNOWN_REGIONS = ("EU", "AM", "AS")
 _ALIASES = {"US": "AM"}
+
+
+def feed_urls():
+    """Mirrors plus an optional `NOVA_OPERA_ENDPOINTS_URL` (comma-separated)."""
+    extra = [url.strip() for url in str(os.environ.get("NOVA_OPERA_ENDPOINTS_URL", "") or "").split(",")
+             if url.strip()]
+    return tuple(extra) + FEED_URLS
 
 
 def parse_endpoint_feed(body):
@@ -53,8 +61,8 @@ def endpoints_for_country(feed, country):
 
 
 def fetch_endpoint_feed(timeout=2.5):
-    """Try both mirrors of the feed; return the parsed regions or {} when neither answers."""
-    for url in FEED_URLS:
+    """Try every mirror; return the parsed regions or {} when none answers."""
+    for url in feed_urls():
         try:
             request = urllib.request.Request(url, headers={"User-Agent": "NovaPC"})
             with urllib.request.urlopen(request, timeout=timeout) as response:

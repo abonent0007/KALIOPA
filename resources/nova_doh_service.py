@@ -17,7 +17,10 @@ import nova_dns_adapters
 import nova_doh_resolver
 
 DOH_LISTEN_IP = "127.0.0.1"
-DOH_LISTEN_PORT = 53
+try:
+    DOH_LISTEN_PORT = max(1, min(65535, int(os.environ.get("NOVA_DOH_PORT", "53") or 53)))
+except ValueError:
+    DOH_LISTEN_PORT = 53
 
 _lock = threading.Lock()
 _resolver = None
@@ -93,7 +96,8 @@ def stop(temp_dir=None, log=None, *, adapters=None):
     global _resolver
     say = log if callable(log) else (lambda _text: None)
     with _lock:
-        resolver, _resolver = _resolver, None
+        resolver = _resolver
+        _resolver = None
         if resolver is not None:
             try:
                 resolver.stop()
