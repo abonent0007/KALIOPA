@@ -10364,6 +10364,27 @@ function FindProxyForURLEx(url, host) {{
                 pass
             return ""
 
+        @classmethod
+        def _bootstrap_proxy_reachable(cls, proxy, timeout=1.2):
+            """TCP-гейт для bootstrap-прокси: мёртвый relay не должен съедать 6.5 с.
+
+            Direct discover на этой сети работает за секунду, а relay.nova-app.eu
+            не отвечает вовсе; без гейта два релея откладывали старт Opera на 13 с.
+            Локальные адреса (WARP 1370) не проверяются — их готовность знает
+            собственный менеджер.
+            """
+            try:
+                parsed = urlparse(str(proxy or ""))
+                host = str(parsed.hostname or "").strip()
+                if not host or host in ("127.0.0.1", "localhost", "::1"):
+                    return True
+                port = parsed.port
+                if not port:
+                    port = 443 if parsed.scheme == "https" else 1080 if parsed.scheme == "socks5" else 8080
+                return cls._endpoint_reachable(f"{host}:{int(port)}", timeout=timeout)
+            except Exception:
+                return True
+
         def _get_api_bootstrap_candidates(self):
             """Ordered proxies for SurfEasy API only; the data tunnel stays direct.
 
@@ -10375,6 +10396,13 @@ function FindProxyForURLEx(url, host) {{
             def add(raw):
                 proxy = self._normalize_opera_api_proxy(raw)
                 if proxy and proxy not in candidates:
+                    if not self._bootstrap_proxy_reachable(proxy):
+                        if IS_DEBUG_MODE:
+                            self.log_func(
+                                f"[EU] [Diag] API bootstrap пропущен (TCP молчит): "
+                                f"{self._redact_proxy_url(proxy)}."
+                            )
+                        return
                     candidates.append(proxy)
 
             add(self._get_configured_api_bootstrap_proxy())
@@ -10694,19 +10722,22 @@ function FindProxyForURLEx(url, host) {{
                 attempts = []
                 if cached_endpoint and self._endpoint_reachable(cached_endpoint):
                     attempts.append(("cached", cached_endpoint, 2.5, None))
+                # Discover идёт раньше опубликованной ленты: замер 2026-11-01 показал,
+                # что все пять адресов из ленты принимают TCP и молчат в туннеле, а
+                # discover отдаёт рабочий .19. Лента остаётся запасным путём.
+                attempts.append(("discover", None, 8.0, None))
                 skipped = 0
                 for _published in self._published_endpoints():
                     if self._endpoint_reachable(_published):
-                        attempts.append(("published", _published, 4.0, None))
+                        attempts.append(("published", _published, 3.0, None))
                     else:
                         skipped += 1
                 if skipped:
                     self.log_func(f"[EU] [Diag] Пропущено недоступных опубликованных endpoint: {skipped}.")
                 for _api_proxy in api_bootstrap_proxies:
                     attempts.append(("discover-api-proxy", None, 6.5, _api_proxy))
-                attempts.append(("discover", None, 6.5, None))
 
-                for attempt_mode, override_endpoint, ready_timeout, base_proxy in attempts:
+                for attempt_index, (attempt_mode, override_endpoint, ready_timeout, base_proxy) in enumerate(attempts):
                     # "fastest" реально качает данные через каждый выданный эндпоинт и
                     # умирает с кодом 12, если не уложится в свой таймаут. Он больше
                     # окна ожидания ниже (2.5-6.5с), поэтому процесс успевает уйти в
@@ -10714,7 +10745,7 @@ function FindProxyForURLEx(url, host) {{
                     # Меряем скорость лишь когда это осмысленно и ещё не подводило.
                     # Сам бенчмарк качает https://ajax.googleapis.com/... — домен, который
                     # у части провайдеров режется, отчего замер и не укладывается.
-                    measuring = not override_endpoint and not self._selection_timeout_seen
+                    measuring = not override_endpoint
                     if measuring:
                         selection_args = [
                             "-server-selection", "fastest",
@@ -10820,8 +10851,15 @@ function FindProxyForURLEx(url, host) {{
                     elif attempt_mode == "discover-api-proxy":
                         _terminate_managed_process("[EU] [Diag] API bootstrap proxy не поднял 1371 вовремя. Пробуем direct discover...")
                         continue
+                    elif attempt_mode == "published" and attempt_index + 1 < len(attempts):
+                        # Опубликованный endpoint принял TCP, но туннель не поднялся:
+                        # не оставляем мёртвый процесс на 1371, пробуем следующий.
+                        _terminate_managed_process(
+                            f"[EU] [Diag] endpoint {override_endpoint} не поднял туннель вовремя. "
+                            "Следующий вариант..."
+                        )
+                        continue
                     else:
-                        # Keep managed process alive: opera registration may need >15s with retries.
                         if IS_DEBUG_MODE:
                             self.log_func("[EU] Предупреждение: Порт 1371 не открылся вовремя. Ожидаем завершения инициализации в фоне.")
                         self.owns_process = True
