@@ -332,6 +332,10 @@ import nova_ping
 import nova_boot_timeline as boot_timeline
 import nova_win_routes
 import nova_dns_ai
+try:
+    import nova_doh_service
+except ImportError:  # pragma: no cover - сборка без модуля
+    nova_doh_service = None
 from nova_routing_backends import (
     build_app_transport_decisions,
     get_selected_routing_backend_info,
@@ -29665,6 +29669,12 @@ function FindProxyForURLEx(url, host) {{
         # Иначе браузер не сможет подключиться к сайтам после остановки Nova
         if not restart_mode:
             try:
+                if nova_doh_service is not None:
+                    nova_doh_service.stop(os.path.join(get_base_dir(), "temp"))
+            except Exception:
+                pass
+
+            try:
                 remove_nrpt_dns_unblock_on_exit(silent=True)
             except: pass
             try:
@@ -29974,6 +29984,12 @@ function FindProxyForURLEx(url, host) {{
             except: pass
 
             try:
+                if nova_doh_service is not None:
+                    nova_doh_service.stop(os.path.join(get_base_dir(), "temp"))
+            except Exception:
+                pass
+
+            try:
                 remove_nrpt_dns_unblock_on_exit(silent=True)
             except: pass
 
@@ -30038,6 +30054,12 @@ function FindProxyForURLEx(url, host) {{
                 save_exclude_auto_checked()
                 flush_learning_data()
             except: pass
+
+            try:
+                if nova_doh_service is not None:
+                    nova_doh_service.stop(os.path.join(get_base_dir(), "temp"))
+            except Exception:
+                pass
 
             try:
                 remove_nrpt_dns_unblock_on_exit(silent=False)
@@ -31294,6 +31316,18 @@ function FindProxyForURLEx(url, host) {{
                          except: pass
                 print("[Info] Флаг --fresh: временные файлы очищены.")
             except: pass
+
+        # Локальный DoH: сначала добить восстановление прошлого запуска, потом
+        # поднимать режим, если он включён NOVA_DOH_GLOBAL=1. По умолчанию
+        # выключен — NRPT-путь остаётся основным.
+        try:
+            _doh_temp = os.path.join(get_base_dir(), "temp")
+            if nova_doh_service is not None:
+                nova_doh_service.recover(_doh_temp)
+                if nova_doh_service.enabled():
+                    nova_doh_service.start(_doh_temp)
+        except Exception as _doh_exc:
+            safe_trace(f"[DoH] startup: {_doh_exc}")
 
         # === SELF-RELOCATION LOGIC (Check only if Frozen) ===
         if is_compiled:
