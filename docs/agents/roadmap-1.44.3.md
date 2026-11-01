@@ -66,9 +66,14 @@
 
 ## Фаза D. Внешние выходы — ЗАБЛОКИРОВАНО ВНЕШНИМИ УСЛОВИЯМИ
 
-### D1. ChatGPT не через WARP — БЛОК
-- факт: OpenAI отдаёт 403 на WARP и Tor; Opera-edge мёртв, публичные VLESS не проходят TLS.
-  Реализация «понятной ошибки» без живого не-Cloudflare выхода не проверяема.
+### D1. ChatGPT не через WARP — СДЕЛАНО
+- investigate: OpenAI 403 на WARP, Tor и direct; headed Chrome через Opera SE
+  (77.111.247.19) загружает ChatGPT полностью, curl/headless получают только JS-челлендж.
+- implement: Opera запускается через direct discover с `fastest`, мёртвые relay и
+  опубликованные endpoint'ы пропускаются, успешный endpoint кэшируется; `ai_apps → opera`
+  в PAC; MTProto исключён из `opera-http`.
+- verify: 1.44.2.12, системный PAC + headed Chrome: ChatGPT, Gemini, YouTube открываются.
+  Детали и замеры endpoint'ов — `docs/agents/chatgpt-opera.md`.
 
 ### D2. VPS + nova-connect — БЛОК
 - нужен VPS/аккаунт и деплой Worker; без него проверка «2ip = страна VPS» невозможна.
@@ -94,7 +99,17 @@
   `Nova.exe`/`libcrypto-3.dll`/`select.pyd` с переименованием занятого файла и повтором.
 - verify: этой сборкой поставлена 1.44.2.10 — `[overlay] copied OK`, без диалогов и ошибок.
 
+## Живая проверка 1.44.2.12 (2026-11-01)
+
+- окно `OBNOVA v1.44.2.12`, лог `VERSION: 1.44.2.12`;
+- `502 / protocol violation`: **0**; Telegram native — `warp-socks`;
+- порты: 1369, 1370, 1371 (Opera), 1372, открыты; 1375/1378 закрыты (вторичный слот — Opera);
+- Opera: cached endpoint `77.111.247.19:443`, `1371 готов` за ~1 с, выход SE;
+- PAC + headed Chrome: **ChatGPT загружается**, Gemini и YouTube открываются;
+- тесты: **160 OK**, `py_compile` PASS, статанализ: 0 неиспользуемых импортов, 0 незащищённых вызовов данных.
+
 ## Живая проверка 1.44.2.10 (2026-11-01)
+
 
 - окно `OBNOVA v1.44.2.10`, лог `VERSION: 1.44.2.10`;
 - `502 / protocol violation`: **0**;
