@@ -102,10 +102,12 @@ foreign-default (наш патч, по умолчанию VPN)`.
 6. **Seed-стратегии обфускации** в `strat/general.json`: Google TLS/QUIC, `sniext`, VK kyber.
 7. **Security backport** (`nova.pyw`): self-deletion и admin relaunch без `shell=True`
    (`--cleanup-old-exe`, `subprocess.list2cmdline`).
-8. **Relay identity pinned** (`nova.pyw`): `API_RELAY_KEY_VERSION = "1.43.2"`, потому что
-   `profiles/opera_relay.key` выпущен для upstream 1.43.2; версия форка `1.43.2.N` не должна
-   попадать в логин `nova-pc-<version>`, иначе WARP/MASQUE/Opera получают `407 outdated-client`.
-   При ротации ключа менять ключ и эту константу одной парой.
+8. **Relay identity dynamic** (`nova.pyw` + `resources/nova_relay_identity.py`): логин
+   `nova-pc-<version>` собирается из версии, под которую выпущен `profiles/opera_relay.key`,
+   а не из `CURRENT_VERSION` и не из константы. Модуль берёт версии из релизов upstream,
+   проверяет ключ пробой через WARP и кэширует рабочую версию в `temp/relay_identity.json`
+   и `profiles/opera_relay.version`. При ротации ключа обновить файл ключа; версия
+   определится сама, при необходимости — `NOVA_RELAY_KEY_VERSION`.
 9. **Брендинг OBNOVA**: отображаемое имя — `OBNOVA` (заголовок окна, сплэш, трей, меню
    «Перезапустить OBNOVA», диалоги, `MyAppName` в `NovaInstaller.iss`); фон — `img/background.png`
    (генерируется `tools/make_background.py`, встраивается в exe при сборке). Имена exe/папки/

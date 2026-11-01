@@ -340,6 +340,10 @@ try:
     import nova_process_hygiene
 except ImportError:  # pragma: no cover - сборка без модуля
     nova_process_hygiene = None
+try:
+    import nova_relay_identity
+except ImportError:  # pragma: no cover - сборка без модуля
+    nova_relay_identity = None
 from nova_routing_backends import (
     build_app_transport_decisions,
     get_selected_routing_backend_info,
@@ -9973,12 +9977,11 @@ function FindProxyForURLEx(url, host) {{
             ("relay.nova-app.eu", 2053),
         )
         API_RELAY_PLATFORM = "pc"
-        # The relay key in profiles/opera_relay.key was issued for upstream
-        # 1.43.2. Fork version bumps (1.43.2.N) only change the product version
-        # and must not change the relay login: the server retires the username
-        # and key together, so `nova-pc-1.43.2.4` answers 407 outdated-client.
-        # Pin the relay identity until a new key is deployed for the fork.
-        API_RELAY_KEY_VERSION = "1.43.2"
+        # The relay login is `nova-pc-<version>`, and <version> must be the one the
+        # key was issued for, not the product version: the server retires the
+        # username and key together, so a fork bump answers 407 outdated-client.
+        # nova_relay_identity takes release versions from upstream, probes the key
+        # and caches the version that actually authenticates.
         _api_relay_password_cache = []
 
         @staticmethod
@@ -9996,33 +9999,23 @@ function FindProxyForURLEx(url, host) {{
 
         @classmethod
         def api_relay_user(cls, log_func=None):
-            """`nova-pc-<version>` — the login the relay checks the key against.
+            """`nova-pc-<version>`; версия — та, под которую выпущен ключ.
 
-            The version comes from this module's own global, deliberately, and not
-            from a fresh `import`. Two reasons, and the second is the load-bearing
-            one:
-
-            * `resources/` has no `__init__.py` and only that directory is placed
-              on `sys.path` (see the block near the top of this file), so
-              `from resources.nova_metadata import ...` raises every single time;
-            * in a frozen build the global is **rebound** right after import to
-              whatever version the installer wrote to `nova_metadata.py` on disk.
-              An import would hand back the value frozen at build time — the stale
-              one — which is exactly the mismatch that makes the relay look dead.
+            `nova_relay_identity` держит версию в кэше/маркере и обновляет её
+            фоновой пробой; продуктовый `CURRENT_VERSION` здесь намеренно не
+            используется, иначе ключ и логин разъезжаются и релей отвечает 407.
             """
-            version = str(getattr(cls, "API_RELAY_KEY_VERSION", "") or "").strip()
+            version = ""
+            try:
+                if nova_relay_identity is not None:
+                    version = nova_relay_identity.current_version(get_base_dir())
+            except Exception:
+                version = ""
             if not version:
-                version = str(globals().get("CURRENT_VERSION", "") or "").strip()
-            if not version:
-                # Silence here would be indistinguishable from "the relay is
-                # down": `api_relays()` returns an empty tuple, the bootstrap
-                # quietly falls through to the other candidates, and nothing says
-                # why. Guessing a version is worse — it spends a round trip to be
-                # told the same thing.
                 if log_func:
                     log_func(
-                        "Релеи API: версия продукта не определилась, логин собрать не из чего — "
-                        "релеи пропускаем. Проверьте CURRENT_VERSION в resources/nova_metadata.py."
+                        "Релеи API: версия ключа не определилась, логин собрать не из чего — "
+                        "релеи пропускаем. Проверьте profiles/opera_relay.key."
                     )
                 return ""
             return "nova-{}-{}".format(cls.API_RELAY_PLATFORM, version)
@@ -31390,6 +31383,14 @@ function FindProxyForURLEx(url, host) {{
                 ).start()
         except Exception:
             pass
+
+        # Личность релея: upstream-версии + проба ключа через WARP. Фоновая,
+        # чтобы не ждать сеть на старте; до результата работает кэш/маркер.
+        try:
+            if nova_relay_identity is not None:
+                nova_relay_identity.refresh_async(get_base_dir(), safe_trace)
+        except Exception as _relay_exc:
+            safe_trace(f"[Relay] identity refresh: {_relay_exc}")
 
         # === SELF-RELOCATION LOGIC (Check only if Frozen) ===
         if is_compiled:
