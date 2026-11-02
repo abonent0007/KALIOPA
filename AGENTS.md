@@ -108,8 +108,8 @@ foreign-default (наш патч, по умолчанию VPN)`.
    проверяет ключ пробой через WARP и кэширует рабочую версию в `temp/relay_identity.json`
    и `profiles/opera_relay.version`. При ротации ключа обновить файл ключа; версия
    определится сама, при необходимости — `NOVA_RELAY_KEY_VERSION`.
-9. **Брендинг OBNOVA**: отображаемое имя — `OBNOVA` (заголовок окна, сплэш, трей, меню
-   «Перезапустить OBNOVA», диалоги, `MyAppName` в `NovaInstaller.iss`); фон — `img/background.png`
+9. **Брендинг KALIOPA**: отображаемое имя — `KALIOPA` (заголовок окна, сплэш, трей, меню
+   «Перезапустить KALIOPA», диалоги, `MyAppName` в `NovaInstaller.iss`); фон — `img/background.png`
    (генерируется `tools/make_background.py`, встраивается в exe при сборке). Имена exe/папки/
    мьютекса/процессов и пути AppData остаются `Nova` — их менять нельзя, иначе сломаются
    обновления, хелперы и существующая установка.

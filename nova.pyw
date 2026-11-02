@@ -332,6 +332,7 @@ import nova_ping
 import nova_boot_timeline as boot_timeline
 import nova_win_routes
 import nova_dns_ai
+import nova_ui_layout
 try:
     import nova_doh_service
 except ImportError:  # pragma: no cover - сборка без модуля
@@ -500,7 +501,7 @@ def install_requirements_visually():
     except Exception as e:
         if has_tk:
             # Try to show error
-            try: ctypes.windll.user32.MessageBoxW(0, f"Ошибка установки библиотек: {e}\nПопробуйте установить их вручную: pip install requests urllib3 Pillow pystray cryptography", "OBNOVA Error", 0x10)
+            try: ctypes.windll.user32.MessageBoxW(0, f"Ошибка установки библиотек: {e}\nПопробуйте установить их вручную: pip install requests urllib3 Pillow pystray cryptography", "KALIOPA Error", 0x10)
             except: pass
         # Fallback: exit if critical networking/relay deps are still missing
         critical_missing = False
@@ -528,7 +529,7 @@ try:
 except ImportError as e:
     TRAY_SUPPORT = False
     # Optional: Warn user but continue
-    # ctypes.windll.user32.MessageBoxW(0, f"Функция трея отключена. Ошибка: {e}", "OBNOVA Warning", 0x30)
+    # ctypes.windll.user32.MessageBoxW(0, f"Функция трея отключена. Ошибка: {e}", "KALIOPA Warning", 0x30)
 
 # TRACE UTILS
 def safe_trace(msg):
@@ -804,7 +805,7 @@ try:
     # a broken Tk runtime keeps the readable boot error instead of a bare traceback.
     import nova_profiles_ui
 except ImportError as e:
-    ctypes.windll.user32.MessageBoxW(0, f"Critical Error: Failed to load Tkinter.\n\n{e}", "OBNOVA Boot Error", 0x10)
+    ctypes.windll.user32.MessageBoxW(0, f"Critical Error: Failed to load Tkinter.\n\n{e}", "KALIOPA Boot Error", 0x10)
     sys.exit(1)
 
 # === SPLASH SCREEN: Immediate visual feedback while loading ===
@@ -820,7 +821,7 @@ try:
     _w, _h = 340, 80
     _splash_root.geometry(f"{_w}x{_h}+{(_sw-_w)//2}+{(_sh-_h)//2}")
     _splash_label = tk.Label(
-        _splash_root, text="OBNOVA \u2014 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0430\u2026",
+        _splash_root, text="KALIOPA \u2014 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0430\u2026",
         fg="#e0e0e0", bg="#1a1a2e", font=("Segoe UI", 13)
     )
     _splash_label.pack(expand=True)
@@ -850,7 +851,7 @@ if not is_admin():
     _close_splash()
     # FIX: Check for infinite loop (relaunch flag)
     if "--admin-relaunch" in sys.argv:
-        ctypes.windll.user32.MessageBoxW(0, "Не удалось получить права администратора автоматически.\n\nПожалуйста, нажмите правой кнопкой мыши на файл и выберите 'Запуск от имени администратора'.", "OBNOVA - Ошибка прав", 0x10)
+        ctypes.windll.user32.MessageBoxW(0, "Не удалось получить права администратора автоматически.\n\nПожалуйста, нажмите правой кнопкой мыши на файл и выберите 'Запуск от имени администратора'.", "KALIOPA - Ошибка прав", 0x10)
         sys.exit(1)
 
     try:
@@ -885,7 +886,7 @@ if not is_admin():
             if result == 5: msg += " (Доступ запрещён)"
             elif result == 1223: msg += " (Отменено пользователем)"
             
-            ctypes.windll.user32.MessageBoxW(0, msg + "\n\nПожалуйста, запустите программу от имени Администратора вручную.", "Ошибка запуска Nova", 0x10)
+            ctypes.windll.user32.MessageBoxW(0, msg + "\n\nПожалуйста, запустите программу от имени Администратора вручную.", "Ошибка запуска KALIOPA", 0x10)
             sys.exit(1)
         
         # If success, the new process is starting. We can exit.
@@ -893,7 +894,7 @@ if not is_admin():
         sys.exit(0)
             
     except Exception as e:
-        ctypes.windll.user32.MessageBoxW(0, f"Не удалось инициировать запрос прав администратора: {e}\n\nПожалуйста, запустите программу от имени Администратора вручную.", "Ошибка запуска Nova", 0x10)
+        ctypes.windll.user32.MessageBoxW(0, f"Не удалось инициировать запрос прав администратора: {e}\n\nПожалуйста, запустите программу от имени Администратора вручную.", "Ошибка запуска KALIOPA", 0x10)
         sys.exit(1)
 
 # Обертка для отлова ошибок при запуске
@@ -952,6 +953,20 @@ try:
 
     def get_fake_dir():
         return os.path.join(get_base_dir(), "fake")
+
+    def _background_pixel_size():
+        """Размер background.png до создания окна: окно подстраивается под фон."""
+        try:
+            if not getattr(sys, 'frozen', False):
+                path = get_internal_path(os.path.join("img", "background.png"))
+                if os.path.exists(path):
+                    from PIL import Image
+                    with Image.open(path) as image:
+                        return image.size
+            image = _load_embedded_pil_image("background")
+            return image.size if image is not None else None
+        except Exception:
+            return None
 
     def _load_embedded_pil_image(asset_name):
         if not embedded_assets:
@@ -1377,7 +1392,7 @@ try:
                 if folder == "bin": 
                     # Показываем окно с ошибкой, чтобы видеть путь даже без консоли
                     try:
-                        ctypes.windll.user32.MessageBoxW(0, f"Critical: Internal 'bin' folder missing.\nPath: {internal_source}", "OBNOVA Deploy Error", 0x10)
+                        ctypes.windll.user32.MessageBoxW(0, f"Critical: Internal 'bin' folder missing.\nPath: {internal_source}", "KALIOPA Deploy Error", 0x10)
                     except: pass
                 
                 # DEBUG: Log missing internal path info to file
@@ -1396,7 +1411,7 @@ try:
             if folder == "bin":
                 internal_winws = os.path.join(internal_source, WINWS_FILENAME)
                 if not os.path.exists(internal_winws):
-                    try: ctypes.windll.user32.MessageBoxW(0, f"Critical Build Error: 'winws.exe' is missing.\nPath: {internal_winws}", "OBNOVA Internal Error", 0x10)
+                    try: ctypes.windll.user32.MessageBoxW(0, f"Critical Build Error: 'winws.exe' is missing.\nPath: {internal_winws}", "KALIOPA Internal Error", 0x10)
                     except: pass
 
             # Если папки назначения нет - создаем
@@ -6233,7 +6248,7 @@ try:
                 self._set(kind, message=str(message or "").strip())
                 if is_closing:
                     # Both modules treat a raising callback as a clean cancel.
-                    raise RuntimeError("OBNOVA закрывается")
+                    raise RuntimeError("KALIOPA закрывается")
             return _callback
 
         def _nova_go_path(self):
@@ -6357,7 +6372,7 @@ try:
                 profile_name = f"Cloudflare MASQUE {number}"
                 out_path = os.path.join(folder, f"{profile_name}.json")
                 cmd = [nova_go, "masque", "register", "--out", out_path, "--accept-tos",
-                       "--name", "OBNOVA PC", "--api-mode", "auto"]
+                       "--name", "KALIOPA PC", "--api-mode", "auto"]
                 first_proxy = ""
                 if is_local_port_open_quick(1371):
                     first_proxy = "http://127.0.0.1:1371"
@@ -15190,7 +15205,7 @@ function FindProxyForURLEx(url, host) {{
                     def enum_windows_proc(hwnd, lParam):
                         window_text = ctypes.create_unicode_buffer(512)
                         ctypes.windll.user32.GetWindowTextW(hwnd, window_text, 512)
-                        if ("OBNOVA v" in window_text.value) or ("OBNOVA v" in window_text.value):
+                        if ("KALIOPA v" in window_text.value) or ("OBNOVA v" in window_text.value):
                             ctypes.windll.user32.ShowWindow(hwnd, 9) # SW_RESTORE
                             ctypes.windll.user32.SetForegroundWindow(hwnd)
                             return False # Stop enumeration
@@ -15221,10 +15236,10 @@ function FindProxyForURLEx(url, host) {{
             _close_splash()
             temp_root = tk.Tk(); temp_root.withdraw(); temp_root.attributes("-topmost", True)
             if force_instance_mode:
-                msg = "Перезапуск не смог получить mutex экземпляра Nova.\n\nЗавершите зависшие процессы pythonw.exe / Nova.exe и запустите Nova снова."
+                msg = "Перезапуск не смог получить mutex экземпляра KALIOPA.\n\nЗавершите зависшие процессы pythonw.exe / Nova.exe и запустите KALIOPA снова."
             else:
                 msg = "Программа уже запущена!\n\nПроверьте системный трей (возле часов) или завершите процессы pythonw.exe / Nova.exe в Диспетчере задач."
-            messagebox.showerror("OBNOVA - Ошибка запуска", msg)
+            messagebox.showerror("KALIOPA - Ошибка запуска", msg)
             temp_root.destroy()
         except: pass
         finally:
@@ -17427,7 +17442,7 @@ function FindProxyForURLEx(url, host) {{
         # restart_nova moved to GLOBAL scope to be accessible from all menus
         pass 
         
-        context_menu.add_command(label="Перезапустить OBNOVA", command=restart_nova)
+        context_menu.add_command(label="Перезапустить KALIOPA", command=restart_nova)
 
         log_text_widget.tag_bind("clickable_cmd", "<Button-1>", copy_command)
         def show_log_context_menu(event):
@@ -18275,7 +18290,7 @@ function FindProxyForURLEx(url, host) {{
                 image = Image.new('RGB', (64, 64), color = (73, 109, 137))
 
             menu = (pystray.MenuItem('Открыть', on_tray_open, default=True), pystray.MenuItem('Выход', on_tray_quit))
-            TRAY_ICON = pystray.Icon("name", image, "OBNOVA", menu)
+            TRAY_ICON = pystray.Icon("name", image, "KALIOPA", menu)
             TRAY_ICON.run()
         except Exception as e:
             safe_trace(f"Tray Error: {e}")
@@ -26206,7 +26221,7 @@ function FindProxyForURLEx(url, host) {{
                 sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
 
-    def native_message_box(text, title="OBNOVA", flags=0):
+    def native_message_box(text, title="KALIOPA", flags=0):
         try:
             return ctypes.windll.user32.MessageBoxW(0, text, title, flags | 0x40000)
         except:
@@ -26270,12 +26285,12 @@ function FindProxyForURLEx(url, host) {{
         visible = bool(snapshot.get("installing") or snapshot.get("available"))
 
         if snapshot.get("installing"):
-            text = "Загрузка Nova..."
+            text = "Загрузка KALIOPA..."
         elif snapshot.get("checking"):
             if not snapshot.get("available"):
                 visible = False
             else:
-                text = "Проверка Nova..."
+                text = "Проверка KALIOPA..."
         elif snapshot.get("available") and snapshot.get("version"):
             text = f"Обновить до {snapshot['version']}"
         else:
@@ -26411,13 +26426,13 @@ function FindProxyForURLEx(url, host) {{
         expected_hash = manifest.get("sha256")
 
         if not download_url:
-            native_message_box("В manifest обновления отсутствует ссылка на установщик.", "OBNOVA - Обновление", 0x10)
+            native_message_box("В manifest обновления отсутствует ссылка на установщик.", "KALIOPA - Обновление", 0x10)
             return
 
         try:
             import requests
         except ImportError as e:
-            native_message_box(f"Не удалось импортировать requests.\n\n{e}", "OBNOVA - Обновление", 0x10)
+            native_message_box(f"Не удалось импортировать requests.\n\n{e}", "KALIOPA - Обновление", 0x10)
             return
 
         temp_dir = os.path.join(get_base_dir(), "temp")
@@ -26434,7 +26449,7 @@ function FindProxyForURLEx(url, host) {{
 
         set_update_state(installing=True, checking=False)
         if log_func:
-            log_func(f"[Update] Скачивание установщика Nova {version}...")
+            log_func(f"[Update] Скачивание установщика KALIOPA {version}...")
 
         try:
             session = _new_update_session()
@@ -26492,7 +26507,7 @@ function FindProxyForURLEx(url, host) {{
                 pass
             if log_func:
                 log_func(f"[Update] Не удалось скачать установщик: {e}")
-            native_message_box(f"Не удалось скачать установщик обновления.\n\n{e}", "OBNOVA - Обновление", 0x10)
+            native_message_box(f"Не удалось скачать установщик обновления.\n\n{e}", "KALIOPA - Обновление", 0x10)
             return
 
         if expected_hash:
@@ -26507,7 +26522,7 @@ function FindProxyForURLEx(url, host) {{
                     log_func("[Update] ОШИБКА: контрольная сумма установщика не совпала.")
                 native_message_box(
                     "Контрольная сумма установщика не совпала.\n\nОбновление отменено.",
-                    "OBNOVA - Обновление",
+                    "KALIOPA - Обновление",
                     0x10,
                 )
                 return
@@ -26530,11 +26545,11 @@ function FindProxyForURLEx(url, host) {{
             set_update_state(installing=False)
             if log_func:
                 log_func(f"[Update] Не удалось запустить установщик: {e}")
-            native_message_box(f"Не удалось запустить установщик.\n\n{e}", "OBNOVA - Обновление", 0x10)
+            native_message_box(f"Не удалось запустить установщик.\n\n{e}", "KALIOPA - Обновление", 0x10)
             return
 
         if log_func:
-            log_func("[Update] Мастер установки запущен. Nova будет закрыта для обновления.")
+            log_func("[Update] Мастер установки запущен. KALIOPA будет закрыта для обновления.")
 
         try:
             stop_nova_service(silent=True)
@@ -26558,7 +26573,7 @@ function FindProxyForURLEx(url, host) {{
 
         state = get_update_state()
         if state.get("installing") or state.get("checking"):
-            native_message_box("Проверка или загрузка обновления уже выполняется.", "OBNOVA - Обновление", 0x40)
+            native_message_box("Проверка или загрузка обновления уже выполняется.", "KALIOPA - Обновление", 0x40)
             return
 
         def _worker():
@@ -26566,16 +26581,16 @@ function FindProxyForURLEx(url, host) {{
             manifest, error = fetch_update_manifest()
             if error:
                 set_update_state(checking=False)
-                native_message_box(f"Не удалось проверить обновление.\n\n{error}", "OBNOVA - Обновление", 0x10)
+                native_message_box(f"Не удалось проверить обновление.\n\n{error}", "KALIOPA - Обновление", 0x10)
                 return
 
             if not manifest.get("available"):
-                native_message_box(f"У вас уже актуальная версия Nova ({CURRENT_VERSION}).", "OBNOVA - Обновление", 0x40)
+                native_message_box(f"У вас уже актуальная версия KALIOPA ({CURRENT_VERSION}).", "KALIOPA - Обновление", 0x40)
                 return
 
             answer = native_message_box(
-                f"Доступна новая версия Nova {manifest['version']}.\n\nСкачать установщик и запустить обновление?",
-                "OBNOVA - Обновление",
+                f"Доступна новая версия KALIOPA {manifest['version']}.\n\nСкачать установщик и запустить обновление?",
+                "KALIOPA - Обновление",
                 0x24,
             )
             if answer != 6:
@@ -27777,7 +27792,7 @@ function FindProxyForURLEx(url, host) {{
                     current_state = get_update_state()
                     if current_state.get("announced_version") != manifest["version"]:
                         set_update_state(announced_version=manifest["version"])
-                        log_func(f"[Update] Доступна новая версия Nova {manifest['version']}. Нажмите кнопку 'Обновить до {manifest['version']}'.")
+                        log_func(f"[Update] Доступна новая версия KALIOPA {manifest['version']}. Нажмите кнопку 'Обновить до {manifest['version']}'.")
                 else:
                     if first_run:
                         log_func("Версия программы актуальна")
@@ -29670,7 +29685,7 @@ function FindProxyForURLEx(url, host) {{
         # === НЕМЕДЛЕННОЕ обновление UI ===
         if root and not restart_mode:
             root.after(0, lambda: btn_toggle.config(text="ПОДКЛЮЧИТЬ"))
-            # restart_nova() (ПКМ -> "Перезапустить OBNOVA") calls this same full
+            # restart_nova() (ПКМ -> "Перезапустить KALIOPA") calls this same full
             # stop before killing the process; without this check its own
             # "ПЕРЕЗАПУСК" label got overwritten back to "ОСТАНОВЛЕНО" here a
             # moment later.
@@ -29934,7 +29949,7 @@ function FindProxyForURLEx(url, host) {{
                     except: pass
 
                     if is_vpn_active: # Check VPN again in worker
-                         root.after(0, lambda: messagebox.showinfo("VPN активен", "OBNOVA не может быть запущен, пока активно VPN-соединение."))
+                         root.after(0, lambda: messagebox.showinfo("VPN активен", "KALIOPA не может быть запущен, пока активно VPN-соединение."))
                     else:
                         start_nova_service()
                         # Wait for process to appear (max 15s)
@@ -29953,7 +29968,7 @@ function FindProxyForURLEx(url, host) {{
 
     def toggle_service():
         if is_vpn_active:
-            messagebox.showinfo("VPN активен", "OBNOVA не может быть запущен, пока активно VPN-соединение.")
+            messagebox.showinfo("VPN активен", "KALIOPA не может быть запущен, пока активно VPN-соединение.")
             return
             
         # Anti-Spam: Ignore if queue has > 1 pending items (Current action + 1 pending is Max)
@@ -30428,7 +30443,7 @@ function FindProxyForURLEx(url, host) {{
                 # Check if updated flag was passed (set in main's ARGS_PARSED global)
                 try:
                     if ARGS_PARSED.get('updated', False):
-                        log_print("Установлена последняя версия Nova.")
+                        log_print("Установлена последняя версия KALIOPA.")
                         # Сообщаем об очистке, если она была (DISABLED per user request)
                         if OLD_VERSION_CLEANED:
                              if IS_DEBUG_MODE: log_print("Следы прежней версии программы удалены")
@@ -30600,7 +30615,7 @@ function FindProxyForURLEx(url, host) {{
         return rendered
 
     class RoundedButton:
-        def __init__(self, canvas, x, y, width, height, radius, color, text, command=None, fg="#333333"):
+        def __init__(self, canvas, x, y, width, height, radius, color, text, command=None, fg="#333333", font=None):
             self.canvas = canvas
             self.command = command
             self.state_val = "normal"
@@ -30613,7 +30628,7 @@ function FindProxyForURLEx(url, host) {{
             self.y = y
             self.base_fg = fg
             self.hover_fg = fg
-            self.normal_font = ("Segoe UI", 10, "bold")
+            self.normal_font = font or ("Segoe UI", 10, "bold")
             self.hover_font = self.normal_font
             
             self.bg_image = None # Ссылка для предотвращения GC
@@ -31434,7 +31449,7 @@ function FindProxyForURLEx(url, host) {{
                         "Рекомендуется создать отдельную папку для программы.\n\n"
                         "Создать папку 'Nova' и запустить программу оттуда?"
                     )
-                    ret = ctypes.windll.user32.MessageBoxW(0, msg, "OBNOVA - Первый запуск", 3 | 48 | 0x40000)
+                    ret = ctypes.windll.user32.MessageBoxW(0, msg, "KALIOPA - Первый запуск", 3 | 48 | 0x40000)
                     
                     if ret == 6: # IDYES - Relocate
                         target_dir = os.path.join(base_dir, "Nova")
@@ -31478,7 +31493,7 @@ function FindProxyForURLEx(url, host) {{
                             # Detailed error message
                             import traceback
                             err_details = f"Error: {e}\nSrc: {sys.executable}\nDst: {target_dir}"
-                            ctypes.windll.user32.MessageBoxW(0, f"Ошибка при перемещении:\n{err_details}", "Ошибка Nova", 0x10)
+                            ctypes.windll.user32.MessageBoxW(0, f"Ошибка при перемещении:\n{err_details}", "Ошибка KALIOPA", 0x10)
                             sys.exit() 
 
                     elif ret == 7: # IDNO - Run Here
@@ -31576,7 +31591,7 @@ function FindProxyForURLEx(url, host) {{
         _close_splash()  # Must destroy splash Tk() before creating main Tk()
         root = tk.Tk()
         root.withdraw()
-        root.title(f"OBNOVA v{CURRENT_VERSION}")
+        root.title(f"KALIOPA v{CURRENT_VERSION}")
         # Ctrl+V/C/X at any keyboard layout and a right-click menu in every text field.
         try: nova_tk_clipboard.install(root)
         except Exception: pass
@@ -31687,45 +31702,40 @@ function FindProxyForURLEx(url, host) {{
 
         state = load_window_state()
         geom = state.get("main_geometry")
+        # Размер клиентской области задаёт фон: картинка заполняет окно без полос.
+        # Если она больше рабочей области, масштабируется целиком (пропорции целы).
         w, h = 360, 270
-        if geom:
-            geom_applied = False
-            try:
-                m = re.match(r"^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$", str(geom).strip())
-                if m:
-                    w_try, h_try = int(m.group(1)), int(m.group(2))
-                    x_try, y_try = int(m.group(3)), int(m.group(4))
-                    probe_x = x_try + max(20, w_try // 2)
-                    probe_y = y_try + 20
-                    if is_monitor_available(probe_x, probe_y):
-                        root.geometry(f"{w_try}x{h_try}+{x_try}+{y_try}")
-                        w, h = w_try, h_try
-                        geom_applied = True
-                    else:
-                        if IS_DEBUG_MODE:
-                            print(f"[UI] Геометрия вне экрана, сброс: {geom}")
-                else:
-                    # Legacy format fallback (size only)
-                    root.geometry(geom)
-                    m2 = re.match(r"(\d+)x(\d+)", str(geom))
-                    if m2:
-                        w, h = int(m2.group(1)), int(m2.group(2))
-                    geom_applied = True
-            except:
-                geom_applied = False
-
-            if not geom_applied:
-                sw = root.winfo_screenwidth()
-                sh = root.winfo_screenheight()
-                x = int((sw/2) - (w/2))
-                y = int((sh/2) - (h/2))
-                root.geometry(f"{w}x{h}+{x}+{y}")
-        else:
+        ui_scale = 1.0
+        bg_size = _background_pixel_size()
+        if bg_size:
+            img_w, img_h = bg_size
             sw = root.winfo_screenwidth()
             sh = root.winfo_screenheight()
-            x = int((sw/2) - (w/2))
-            y = int((sh/2) - (h/2))
-            root.geometry(f"{w}x{h}+{x}+{y}")
+            max_w = max(320, sw - 80)
+            max_h = max(240, sh - 120)
+            fit = min(1.0, max_w / float(img_w), max_h / float(img_h))
+            w = max(320, int(round(img_w * fit)))
+            h = max(240, int(round(img_h * fit)))
+            ui_scale = max(1.0, min(w / 360.0, h / 270.0))
+
+        x = y = None
+        if geom:
+            m = re.match(r"^(\d+)x(\d+)\+(-?\d+)\+(-?\d+)$", str(geom).strip())
+            if m:
+                x_try, y_try = int(m.group(3)), int(m.group(4))
+                if is_monitor_available(x_try + max(20, w // 2), y_try + 20):
+                    x, y = x_try, y_try
+        if x is None or y is None:
+            sw = root.winfo_screenwidth()
+            sh = root.winfo_screenheight()
+            x = int((sw - w) / 2)
+            y = int((sh - h) / 2)
+        # Окно стало шире прежнего: не выпускаем его за пределы экрана.
+        sw = root.winfo_screenwidth()
+        sh = root.winfo_screenheight()
+        x = max(0, min(int(x), max(0, sw - w - 20)))
+        y = max(0, min(int(y), max(0, sh - h - 60)))
+        root.geometry(f"{w}x{h}+{x}+{y}")
             
         # FIX: Force window to show if this is a restart/update
         # This prevents the app from starting minimized or hidden
@@ -31743,26 +31753,38 @@ function FindProxyForURLEx(url, host) {{
 
         # Beta Mode Flag
         is_beta_mode = False
+        bg_rect = (0, 0, w, h)
         try:
             bg_image = None
+            pil_bg = None
             if not getattr(sys, 'frozen', False):
                 img_path = get_internal_path(os.path.join("img", "background.png"))
                 if os.path.exists(os.path.join(get_base_dir(), "img", "background.jpg")):
                     print("[UI] Внимание: найден background.jpg, но программа поддерживает только PNG!")
                 if os.path.exists(img_path):
-                    bg_image = tk.PhotoImage(file=img_path, master=root)
-            if bg_image is None:
+                    try:
+                        from PIL import Image
+                        pil_bg = Image.open(img_path).convert("RGB")
+                    except Exception as pil_exc:
+                        print(f"[UI] PIL не открыл фон: {pil_exc}")
+                        bg_image = tk.PhotoImage(file=img_path, master=root)
+            if pil_bg is None and bg_image is None:
+                pil_bg = _load_embedded_pil_image("background")
+            if pil_bg is not None:
                 try:
-                    from PIL import ImageTk
-                    embedded_bg = _load_embedded_pil_image("background")
-                    if embedded_bg is not None:
-                        bg_image = ImageTk.PhotoImage(embedded_bg, master=root)
-                except:
-                    pass
-
+                    from PIL import Image, ImageTk
+                    # Любой размер фона вписывается в окно целиком: кнопки ниже
+                    # считаются от bg_rect, поэтому компоновка не зависит от того,
+                    # 360x270 картинка или 967x540.
+                    bg_rect = nova_ui_layout.contain_rect(pil_bg.width, pil_bg.height, w, h)
+                    fitted = pil_bg.resize((bg_rect[2], bg_rect[3]), Image.LANCZOS)
+                    bg_image = ImageTk.PhotoImage(fitted, master=root)
+                except Exception as fit_exc:
+                    print(f"[UI] Фон не отмасштабирован: {fit_exc}")
+                    bg_rect = (0, 0, w, h)
             if bg_image is not None:
                 main_canvas.bg_image = bg_image
-                main_canvas.create_image(0, 0, image=bg_image, anchor="nw")
+                main_canvas.create_image(bg_rect[0], bg_rect[1], image=bg_image, anchor="nw")
             else:
                 # Fallback: Gradient Background (Sapphire -> Yogurt)
                 # Only if running as script (.pyw)
@@ -31799,18 +31821,34 @@ function FindProxyForURLEx(url, host) {{
                         # Center: w/2
                         main_canvas.create_text(w/2, h/2 + 65, text="версия для бета-тестеров", 
                                               font=("Segoe UI", 8), fill="#FFFFFF")
-
+                        
                     except ImportError:
                         pass # PIL not found, fallback to default bg color
                         
         except Exception as e:
             print(f"[UI] Ошибка загрузки фона: {e}")
 
-        status_label = CanvasLabel(main_canvas, w/2, h/2 - 45, "Запуск...", ("Segoe UI Semibold", 10), "grey", outline_color="#DFF07E", outline_width=2)
+        # Опорные точки компоновки — углы и центр нарисованного фона, а не окна.
+        # При фоне 360x270 значения совпадают со старыми; при 967x540 кнопки
+        # остаются у краёв картинки, а не у обрезанного левого верхнего угла.
+        bg_x, bg_y, bg_w, bg_h = bg_rect
+        bg_left = bg_x
+        bg_top = bg_y
+        bg_right = bg_x + bg_w
+        bg_bottom = bg_y + bg_h
+        bg_center_x = bg_x + bg_w / 2
+        bg_center_y = bg_y + bg_h / 2
+
+        def _px(value):
+            """Пиксели дизайна 360x270 -> текущий размер окна."""
+            return max(1, int(round(float(value) * ui_scale)))
+
+        status_label = CanvasLabel(main_canvas, bg_center_x, bg_center_y - _px(45), "Запуск...", ("Segoe UI Semibold", _px(10)), "grey", outline_color="#DFF07E", outline_width=2)
         status_label.bind("<Button-1>", start_move)
         status_label.bind("<B1-Motion>", do_move)
         
-        btn_toggle = RoundedButton(main_canvas, w/2, h/2 + 10, 160, 40, 20, COLOR_BLUEBERRY_YOGURT, "ПОДКЛЮЧИТЬ", toggle_service)
+        btn_toggle = RoundedButton(main_canvas, bg_center_x, bg_center_y + _px(10), _px(160), _px(40), _px(20), COLOR_BLUEBERRY_YOGURT, "ПОДКЛЮЧИТЬ", toggle_service,
+                                   font=("Segoe UI", _px(10), "bold"))
         
         # Style for Log Button
         log_fg = "#777777"
@@ -31823,10 +31861,10 @@ function FindProxyForURLEx(url, host) {{
         update_button_available_fg = COLOR_TEXT_NORMAL
         btn_update = CanvasLabel(
             main_canvas,
-            w - 12,
-            14,
+            bg_right - _px(12),
+            bg_top + _px(14),
             "Обновить до",
-            ("Segoe UI Semibold", 9),
+            ("Segoe UI Semibold", _px(9)),
             fg=update_button_available_fg,
             anchor="ne",
             outline_color="#DFF07E",
@@ -31839,12 +31877,12 @@ function FindProxyForURLEx(url, host) {{
         # Bottom corner rows, shared by the indicator pills (left) and the buttons (right): the
         # same centres and the same font. A pill is ~23 px tall, so the lowest centre stays 16 px
         # above the edge -- at 10 px its lower part was cut off by the window.
-        MAIN_ROW_STEP = 26
-        MAIN_ROW_1 = h - 16
+        MAIN_ROW_STEP = _px(26)
+        MAIN_ROW_1 = bg_bottom - _px(16)
         MAIN_ROW_2 = MAIN_ROW_1 - MAIN_ROW_STEP
         MAIN_ROW_3 = MAIN_ROW_2 - MAIN_ROW_STEP
-        MAIN_CORNER_FONT = ("Segoe UI", 9, "bold")
-        btn_logs = CanvasButton(main_canvas, w-10, MAIN_ROW_1, "Показать лог", MAIN_CORNER_FONT, toggle_log_window, anchor="e", fg=log_fg, bg_color=log_bg)
+        MAIN_CORNER_FONT = ("Segoe UI", _px(9), "bold")
+        btn_logs = CanvasButton(main_canvas, bg_right - _px(10), MAIN_ROW_1, "Показать лог", MAIN_CORNER_FONT, toggle_log_window, anchor="e", fg=log_fg, bg_color=log_bg)
         btn_logs.set_visible(False)
         btn_settings = None
         btn_profiles = None
@@ -33432,7 +33470,7 @@ function FindProxyForURLEx(url, host) {{
 
         btn_settings = CanvasButton(
             main_canvas,
-            w - 10,
+            bg_right - _px(10),
             MAIN_ROW_2,
             "⚙ Настройки",
             MAIN_CORNER_FONT,
@@ -33445,7 +33483,7 @@ function FindProxyForURLEx(url, host) {{
 
         btn_profiles = CanvasButton(
             main_canvas,
-            w - 10,
+            bg_right - _px(10),
             MAIN_ROW_3,
             "Профили",
             MAIN_CORNER_FONT,
@@ -33467,7 +33505,7 @@ function FindProxyForURLEx(url, host) {{
 
         region_indicator_pill = CanvasRegionPill(
             main_canvas,
-            10,
+            bg_left + _px(10),
             MAIN_ROW_1,
             MAIN_CORNER_FONT,
             anchor="sw",
@@ -33483,7 +33521,7 @@ function FindProxyForURLEx(url, host) {{
         # подмену делает Nova своим каскадом. Пусто - ни того, ни другого.
         dns_ai_indicator_pill = CanvasRegionPill(
             main_canvas,
-            10,
+            bg_left + _px(10),
             MAIN_ROW_2,
             MAIN_CORNER_FONT,
             anchor="sw",
@@ -33751,7 +33789,7 @@ function FindProxyForURLEx(url, host) {{
             """
             try:
                 hostname = simpledialog.askstring(
-                    "Nova",
+                    "KALIOPA",
                     "Домен, который не открывается (например, example.com):",
                     parent=root,
                 )
@@ -33790,7 +33828,7 @@ function FindProxyForURLEx(url, host) {{
                     "kept": f"{hostname} проверен, маршрут менять не требуется.",
                     "rerouted": f"{hostname} добавлен в RU-маршрут — заработает в течение нескольких секунд.",
                 }.get(result.get("status"), str(result))
-                root.after(0, lambda: native_message_box(message, "Nova"))
+                root.after(0, lambda: native_message_box(message, "KALIOPA"))
 
             threading.Thread(target=_worker, daemon=True).start()
 
@@ -33799,7 +33837,7 @@ function FindProxyForURLEx(url, host) {{
         # кнопка «Профили», и второй вход в то же окно ничего не добавлял.
         # toggle_profiles_window_ui никуда не делся - он же открывает окно с
         # кнопки и из меню слота VPN, а возврат пункта сюда это одна строка.
-        main_context_menu.add_command(label="Перезапустить OBNOVA", command=restart_nova)
+        main_context_menu.add_command(label="Перезапустить KALIOPA", command=restart_nova)
         # Пункт «Сообщить о заблокированном сайте…» снят по просьбе владельца.
         # Сам report_blocked_site оставлен намеренно: это единственный способ
         # запустить классификатор Cloudflare (S15), и возврат пункта — ровно
