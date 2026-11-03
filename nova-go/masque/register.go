@@ -393,7 +393,7 @@ func enrollWithRetry(ctx context.Context, client *APIClient, log *Logger, device
 		return outcome, fe
 	}
 	var se *apiStatusError
-	if !errors.As(fe.err, &se) || se.API == nil || !se.API.HasErrorMessage(usquemodels.InvalidPublicKey) {
+	if !errors.As(fe.err, &se) || se.API == nil || !se.API.HasErrorCode(usquemodels.InvalidPublicKey) {
 		return nil, fe
 	}
 	log.Warn("the server rejected the public key; generating a new one")

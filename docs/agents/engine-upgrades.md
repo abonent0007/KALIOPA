@@ -63,14 +63,14 @@ zapret v72.13.
 |---|---|---|
 | `bin/winws.exe` | **v72.13**, 21.07.2026, sha `A14BFF1D…` | актуален: `bol-van/zapret` latest = v72.13. В win-bundle лежит v72.12 (март) — не откатывать |
 | `bin/zapret2/winws2.exe` | **v1.0.6** (win-bundle 27.10.2026), 656 384 Б, sha `BA4CECCD…` | вендорно для UDP-узла и `--filter-l7=mtproto`; в рантайме не используется. `tests/test_zapret2_bundle.py` подтверждает `mtproto_initial`/`--filter-l7`; запуск требует администратора |
-| `bin/nova-xray.exe` | xray-core **26.10.31** (31.10.2026), sha `A8AEEE82…` | обновлён 03.11.2026; исходник `Nova Android/tools/xray-core` — сток 26.10.31, локальных патчей нет. `go build ./...` и `go test ./...` в `nova-xray` проходят |
-| `bin/nova-go.exe` | quic-go **v0.65.0**, sha `F258C5D0…` | обновлён 03.11.2026; `go test ./...` в `nova-go` проходит. Локальный `connect-ip-go` пропатчен под новый `HTTPStream() (*Stream, error)` — `tools/patches/connect-ip-go-httpstream.patch` |
+| `bin/nova-xray.exe` | xray-core **26.10.31** (31.10.2026), sha `C38BEC36…` | обновлён 03.11.2026; исходник `Nova Android/tools/xray-core` — сток 26.10.31, локальных патчей нет. `go build ./...` и `go test ./...` в `nova-xray` проходят |
+| `bin/nova-go.exe` | quic-go **v0.65.0**, usque **v4.2.1**, sha `CADD2D2F…` | обновлён 03.11.2026; `go test ./...` проходит. Локальный `connect-ip-go` пропатчен под новый `HTTPStream() (*Stream, error)` — `tools/patches/connect-ip-go-httpstream.patch`; go-socks5 0.1.4, x/net 0.62.0, x/sys 0.49.0, x/crypto 0.58.0, wireguard 2026-05-22 |
 | `bin/wireproxy-awg.exe` | 1.0.13-dev (13.04.2026) | это AmneziaWG-форк; upstream `whyvl/wireproxy` v1.1.3 несовместим (нет AWG) |
 | `bin/opera-proxy.windows-amd64.exe` | **v1.31.0** (22.10.2026), sha `9290DCC8…` | upstream `Alexey71/opera-proxy`; обновлён 03.11.2026. Флаги `-fake-SNI`, `-override-proxy-address`, `-api-proxy` сохранены. Лента `AS` (`77.111.245.12`) не используется: SurfEasy API отвечает 801, endpoint мёртв |
 | `bin/tor/*` | Tor Expert Bundle **15.0.22** (tor 0.4.9.12, lyrebird 0.8.1) | `dist.torproject.org` недоступен из этой сети (DNS), обновление отложено |
-| Python-зависимости | requests 2.34.2, urllib3 2.7.0, certifi 2026.05.20 | вендорены в `resources/`, обновляются только пересборкой окружения |
+| Python-зависимости | requests 2.34.2, urllib3 2.8.0, certifi 2026.10.23, httpx 0.28.1, Pillow 13.0.0, pystray 0.19.5, cryptography 50.0.2 | обновлены в Python 3.14 (`uv pip install --upgrade`), входят в exe через PyInstaller |
 
-Проверка после обновления: `191` тест, `py_compile`, `tools/static_analysis.py`,
+Проверка после обновления: `198` тестов, `py_compile`, `tools/static_analysis.py`,
 `tools/import_scan.py`, `go test ./...` в `nova-go` и `nova-xray`,
 `cargo check --workspace`.
 

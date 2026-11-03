@@ -123,7 +123,7 @@ func NewTLSConfig(c *Crypto, sni string, allowCloudflareSNI bool) (*tls.Config, 
 	if IsCloudflareClientSNI(name) && !allowCloudflareSNI {
 		return nil, fmt.Errorf("SNI %q is a cloudflareclient.com name, refused (DPI blocks it)", name)
 	}
-	cfg, err := usqueapi.PrepareTlsConfig(c.PrivateKey, c.PeerKey, c.Cert, name)
+	cfg, err := usqueapi.PrepareTlsConfig(c.PrivateKey, c.PeerKey, c.Cert, name, false)
 	if err != nil {
 		return nil, fmt.Errorf("prepare MASQUE TLS config: %w", err)
 	}

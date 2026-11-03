@@ -116,7 +116,7 @@ func TestStatusErrorAndTOS(t *testing.T) {
 	err := statusError(&apiResponse{StatusCode: 400, Status: "400 Bad Request",
 		Body: []byte(`{"result":null,"success":false,"errors":[{"code":1001,"message":"Invalid public key"}],"messages":[]}`)})
 	var se *apiStatusError
-	if !errors.As(err, &se) || se.API == nil || !se.API.HasErrorMessage("Invalid public key") {
+	if !errors.As(err, &se) || se.API == nil || !strings.Contains(se.API.ErrorsAsString("; "), "Invalid public key") {
 		t.Fatalf("API error not parsed: %v", err)
 	}
 	if fe := apiFailure("enroll key", err); fe.code != ExitAPIStatus {
