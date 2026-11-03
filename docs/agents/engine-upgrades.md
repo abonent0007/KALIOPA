@@ -57,19 +57,21 @@ winws2.exe --wf-tcp-out=80,443 \
 сверяет все опции стратегий с белым списком, сверенным по `docs/readme.md`
 zapret v72.13.
 
-## Инвентарь бинарей и библиотек (2026-10-31)
+## Инвентарь бинарей и библиотек (2026-11-03)
 
 | Компонент | Версия / дата | Статус |
 |---|---|---|
 | `bin/winws.exe` | **v72.13**, 21.07.2026, sha `A14BFF1D…` | актуален: `bol-van/zapret` latest = v72.13. В win-bundle лежит v72.12 (март) — не откатывать |
-| `bin/zapret2/winws2.exe` | **v1.0.6** (win-bundle 27.10.2026), 656 384 Б, sha `BA4CECCD…` | добавлен вендорно для будущего UDP-узла; в рантайме не используется |
-| `bin/zapret2/lua/*.lua` | lib 93 714, antidpi 51 866, auto 21 123, obfs 21 333 | закреплены тестом `tests/test_zapret2_bundle.py` |
-| `bin/nova-xray.exe` | xray-core **26.7.28** (18.10.2026) | апстрим Xray v26.10.31 (31.10) — обновление требует сборки форка, исходников в репозитории нет |
+| `bin/zapret2/winws2.exe` | **v1.0.6** (win-bundle 27.10.2026), 656 384 Б, sha `BA4CECCD…` | вендорно для UDP-узла и `--filter-l7=mtproto`; в рантайме не используется. `tests/test_zapret2_bundle.py` подтверждает `mtproto_initial`/`--filter-l7`; запуск требует администратора |
+| `bin/nova-xray.exe` | xray-core **26.10.31** (31.10.2026), sha `A8AEEE82…` | обновлён 03.11.2026; исходник `Nova Android/tools/xray-core` — сток 26.10.31, локальных патчей нет. `go build ./...` и `go test ./...` в `nova-xray` проходят |
+| `bin/nova-go.exe` | quic-go **v0.65.0**, sha `F258C5D0…` | обновлён 03.11.2026; `go test ./...` в `nova-go` проходит. Локальный `connect-ip-go` пропатчен под новый `HTTPStream() (*Stream, error)` — `tools/patches/connect-ip-go-httpstream.patch` |
 | `bin/wireproxy-awg.exe` | 1.0.13-dev (13.04.2026) | это AmneziaWG-форк; upstream `whyvl/wireproxy` v1.1.3 несовместим (нет AWG) |
-| `bin/opera-proxy.windows-amd64.exe` | v1.30.0 (06.10.2026) | репозиторий апстрима не найден (`yeltuk/opera-proxy` → 404), обновление невозможно |
+| `bin/opera-proxy.windows-amd64.exe` | **v1.31.0** (22.10.2026), sha `9290DCC8…` | upstream `Alexey71/opera-proxy`; обновлён 03.11.2026. Флаги `-fake-SNI`, `-override-proxy-address`, `-api-proxy` сохранены. Лента `AS` (`77.111.245.12`) не используется: SurfEasy API отвечает 801, endpoint мёртв |
 | `bin/tor/*` | Tor Expert Bundle **15.0.22** (tor 0.4.9.12, lyrebird 0.8.1) | `dist.torproject.org` недоступен из этой сети (DNS), обновление отложено |
 | Python-зависимости | requests 2.34.2, urllib3 2.7.0, certifi 2026.05.20 | вендорены в `resources/`, обновляются только пересборкой окружения |
 
-Проверка после обновления: `98+` тестов, `py_compile`, `tools/static_analysis.py`,
+Проверка после обновления: `191` тест, `py_compile`, `tools/static_analysis.py`,
+`tools/import_scan.py`, `go test ./...` в `nova-go` и `nova-xray`,
 `cargo check --workspace`.
+
 

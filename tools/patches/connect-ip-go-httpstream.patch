@@ -1,0 +1,13 @@
+--- a/proxy.go
++++ b/proxy.go
+@@ -15,7 +15,10 @@
+ 	w.Header().Set(http3.CapsuleProtocolHeader, capsuleProtocolHeaderValue)
+ 	w.WriteHeader(http.StatusOK)
+ 
+-	str := w.(http3.HTTPStreamer).HTTPStream()
++	str, err := w.(http3.HTTPStreamer).HTTPStream()
++	if err != nil {
++		return nil, err
++	}
+ 	return newProxiedConn(str), nil
+ }

@@ -4,16 +4,30 @@
 > Глубокие детали — `docs/agents/*.md`; открывай их только если задача этого касается.
 > Читай этот файл первым. `nova.pyw` — 33 000+ строк: никогда не читай его целиком.
 
+## Проверка обновлений модулей (каждая сессия)
+
+При старте **каждой новой сессии OpenCode** и **после сжатия (compaction)**:
+
+1. Прочитать `docs/agents/module-updates.md`.
+2. Выполнить `python tools/check_module_updates.py --quiet`.
+3. Если есть обновления — сообщить списком и предложить план. Не обновлять
+   автоматически: backup → обновление одного модуля → тесты → живая проверка → сборка.
+4. Если проверка недоступна (нет сети / GitHub rate limit) — сказать явно.
+
+Кэш проверки — 12 часов; `--force` игнорирует кэш. Источники и процедура обновления
+каждого модуля — в `docs/agents/module-updates.md`.
+
 ## Что это за проект
 
-Nova — Windows-приложение для восстановления доступа к заблокированным сайтам: обход DPI
-(zapret/winws, WinDivert), раздельная маршрутизация (WARP/MASQUE, Opera VPN, Tor, профили),
-подбор стратегий обучения (Rust-движок), Telegram-релей с нейтральным SNI.
+KALIOPA — приватный форк Nova: Windows-приложение для восстановления доступа к
+заблокированным сайтам — обход DPI (zapret/winws, WinDivert), раздельная
+маршрутизация (WARP/MASQUE, Opera VPN, Tor, профили), подбор стратегий обучения
+(Rust-движок), Telegram-релей с нейтральным SNI.
 
-Версия: **1.43.2** (`nova-rs/Cargo.toml`). Стек: Python 3.14 + tkinter (GUI), Rust 2024
-(1.90+; движок/обучение/пробы/TLS), Go 1.26 (nova-go MASQUE/WARP, nova-xray VLESS), WinDivert/WFP.
-Проект на GitHub: аккаунт `confeden` — https://github.com/confeden, репозиторий исходников —
-https://github.com/confeden/Nova (указан в `nova-rs/Cargo.toml`).
+Версия приложения: **1.44.2.19** (`resources/nova_metadata.py`); Rust workspace —
+1.43.2 (`nova-rs/Cargo.toml`). Стек: Python 3.14 + tkinter (GUI), Rust 2024
+(1.90+; движок/обучение/пробы/TLS), Go 1.27 (nova-go MASQUE/WARP, nova-xray VLESS), WinDivert/WFP.
+Upstream: https://github.com/confeden/Nova; приватный форк: https://github.com/abonent0007/KALIOPA.
 
 ## Репозиторий ≠ установленное приложение (читать первым!)
 

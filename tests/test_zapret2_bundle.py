@@ -52,6 +52,14 @@ class Zapret2BundleTests(unittest.TestCase):
         for name in ("preset2_example.cmd", "preset2_wireguard.cmd"):
             self.assertTrue((DIR / name).is_file(), f"нет {name}")
 
+    def test_winws2_advertises_mtproto_filter(self):
+        # Встроенный help/строки winws2: движок умеет --filter-l7=mtproto и
+        # mtproto_initial. Это проверка возможностей, а не запуск WinDivert:
+        # сам winws2 требует прав администратора.
+        data = (DIR / "winws2.exe").read_bytes()
+        self.assertIn(b"mtproto_initial", data)
+        self.assertIn(b"--filter-l7", data)
+
 
 if __name__ == "__main__":
     unittest.main()
