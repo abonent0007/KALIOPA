@@ -97,21 +97,24 @@ def _github_latest(module: dict, token: str) -> str:
     if not repo:
         raise ValueError("не указан repo")
     kind = str(module.get("kind") or "")
+    candidates = []
     if kind == "github-release":
         try:
             data = _http_json("https://api.github.com/repos/%s/releases/latest" % repo, token)
             tag = str(data.get("tag_name") or "").strip()
-            if tag:
-                return tag
+            if re.fullmatch(r"v?\d+(?:\.\d+)*", tag):
+                candidates.append(tag)
         except urllib.error.HTTPError as exc:
             if exc.code != 404:
                 raise
-    data = _http_json("https://api.github.com/repos/%s/tags?per_page=10" % repo, token)
+    data = _http_json("https://api.github.com/repos/%s/tags?per_page=20" % repo, token)
     if isinstance(data, list):
         for tag in data:
             name = str((tag or {}).get("name") or "").strip()
-            if name:
-                return name
+            if re.fullmatch(r"v?\d+(?:\.\d+)*", name):
+                candidates.append(name)
+    if candidates:
+        return max(candidates, key=version_key)
     raise RuntimeError("нет релизов/тегов")
 
 

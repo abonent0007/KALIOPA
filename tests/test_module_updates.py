@@ -3,6 +3,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE_DIR / "tools"))
@@ -26,6 +27,15 @@ class ManifestTests(unittest.TestCase):
 
 
 class VersionTests(unittest.TestCase):
+    def test_non_version_tags_are_ignored_when_choosing_latest(self):
+        def fake_json(url, token="", timeout=20.0):
+            return [{"name": "wireproxy"}, {"name": "v1.0.18"}, {"name": "v1.0.17"}]
+
+        with mock.patch.object(updater, "_http_json", side_effect=fake_json):
+            latest = updater._github_latest({"repo": "artem-russkikh/wireproxy-awg",
+                                             "kind": "github-tags"}, token="")
+        self.assertEqual("v1.0.18", latest)
+
     def test_numeric_versions_compare_by_parts(self):
         self.assertTrue(updater.is_newer("v26.10.31", "26.10.21"))
         self.assertTrue(updater.is_newer("0.65.0", "0.61.0"))

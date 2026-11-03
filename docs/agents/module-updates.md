@@ -36,11 +36,12 @@
 | go-socks5 | 0.1.4 | https://github.com/things-go/go-socks5 | GitHub tags | `go get github.com/things-go/go-socks5@vX`, `go test ./...` |
 | usque (local fork) | v4.2.1 | https://github.com/Diniboy1123/usque | git tags | обновить `Nova Android/build/deps/usque`, `go test ./...` в `nova-go`; проверить MASQUE |
 | connect-ip-go (local + patch) | local 2025-10 + HTTPStream patch | https://github.com/Diniboy1123/connect-ip-go | git log | синхронизировать `Nova Android/tools/connect-ip-go`; применить `tools/patches/connect-ip-go-httpstream.patch`; `go test ./...`. Апстрим 66cba32 пока несовместим с quic-go 0.65 (`http3.ParseCapsule` удалён) |
-| warp-plus (local fork) | local | https://github.com/bepass-org/warp-plus | git log | синхронизировать `Nova Android/tools/warp-plus`; `go test ./...`; проверить MASQUE/WARP |
+| warp-plus (local fork) | v1.2.6 + Nova-патч | https://github.com/bepass-org/warp-plus | git tags | обновить `Nova Android/tools/warp-plus` до тега, применить `tools/patches/warp-plus-nova-v1.2.6.patch`, `go build ./...`, `go test ./...` в `nova-go` |
+| wireproxy-awg | 1.0.18 | https://github.com/artem-russkikh/wireproxy-awg | GitHub tags | собрать `cmd/wireproxy` из тега, backup старого, `--version`, `--configtest` на живом профиле |
 | wireguard-go | 2026-05-22 | https://git.zx2c4.com/wireguard-go | git log | `go get golang.zx2c4.com/wireguard@<commit>`, пересобрать, проверить AWG |
-| wireproxy-awg | 1.0.13-dev | AmneziaWG-форк (upstream `whyvl/wireproxy` несовместим) | вручную | пересобрать из форка, `wireproxy-awg --version`, живой AWG-профиль |
+| wireproxy-awg | 1.0.18 | https://github.com/artem-russkikh/wireproxy-awg | GitHub tags | собрать `cmd/wireproxy` из тега, backup старого, `--version`, `--configtest` на живом профиле |
 | opera-proxy | v1.31.0 | https://github.com/Alexey71/opera-proxy | GitHub release | скачать `opera-proxy.windows-amd64.exe`, backup старого, проверить флаги `-fake-SNI`, `-override-proxy-address`, `-api-proxy`; тест `.247.19` + ChatGPT |
-| Tor Expert Bundle | 0.4.9.12 / 15.0.22 | https://dist.torproject.org/torbrowser/ | вручную | заменить `bin/tor`, `nova-tor.exe --version`, проверить webtunnel/obfs4 |
+| Tor Expert Bundle | 0.4.9.15 / 16.0 | https://dist.torproject.org/torbrowser/ | каталог 16.x | скачать expert bundle, сверить sha256 с `sha256sums-signed-build.txt`, переименовать `tor.exe`/`lyrebird.exe`, `nova-tor --version`, проверить webtunnel/obfs4 |
 | Python-зависимости | requests 2.34.2, urllib3 2.8.0, certifi 2026.10.23, httpx 0.28.1, Pillow 13.0.0, pystray 0.19.5, cryptography 50.0.2 | PyPI | PyPI JSON API | обновлять через `uv pip install --python Python314 --upgrade` (штатный pip 26.1.2 в Python 3.14 сломан: нет `pip._vendor.cachecontrol.caches`), пересобрать exe, полный pytest |
 | Rust-крейты | workspace | crates.io | `cargo update --dry-run` / `cargo outdated` | обновить `Cargo.lock`, `cargo test --workspace`, `cargo check`; не менять `panic = "unwind"` |
 | Opera endpoint feed | runtime | https://raw.githubusercontent.com/confeden/nova_updates/main/opera_endpoints.json | runtime fetch | ничего не собирать; проверить, что endpoint живой, иначе см. `docs/agents/chatgpt-opera.md` |
@@ -63,11 +64,11 @@
     {"id": "go-socks5", "name": "go-socks5", "current": "0.1.4", "kind": "github-tags", "repo": "things-go/go-socks5", "source": "https://github.com/things-go/go-socks5"},
     {"id": "usque", "name": "usque (local fork)", "current": "4.2.1", "kind": "manual", "repo": "Diniboy1123/usque", "source": "https://github.com/Diniboy1123/usque"},
     {"id": "connect-ip-go", "name": "connect-ip-go (local + patch)", "current": "local-2025-10+patch", "kind": "manual", "repo": "Diniboy1123/connect-ip-go", "source": "https://github.com/Diniboy1123/connect-ip-go"},
-    {"id": "warp-plus", "name": "warp-plus (local fork)", "current": "local", "kind": "manual", "repo": "bepass-org/warp-plus", "source": "https://github.com/bepass-org/warp-plus"},
+    {"id": "warp-plus", "name": "warp-plus (local fork)", "current": "1.2.6+patch", "kind": "manual", "repo": "bepass-org/warp-plus", "source": "https://github.com/bepass-org/warp-plus"},
     {"id": "wireguard-go", "name": "wireguard-go", "current": "2026-05-22", "kind": "manual", "source": "https://git.zx2c4.com/wireguard-go"},
-    {"id": "wireproxy-awg", "name": "wireproxy-awg", "current": "1.0.13-dev", "kind": "manual", "source": "AmneziaWG fork; upstream whyvl/wireproxy incompatible"},
+    {"id": "wireproxy-awg", "name": "wireproxy-awg", "current": "1.0.18", "kind": "github-tags", "repo": "artem-russkikh/wireproxy-awg", "source": "https://github.com/artem-russkikh/wireproxy-awg"},
     {"id": "opera-proxy", "name": "opera-proxy", "current": "1.31.0", "kind": "github-release", "repo": "Alexey71/opera-proxy", "source": "https://github.com/Alexey71/opera-proxy"},
-    {"id": "tor", "name": "Tor Expert Bundle", "current": "0.4.9.12/15.0.22", "kind": "manual", "source": "https://dist.torproject.org/torbrowser/"},
+    {"id": "tor", "name": "Tor Expert Bundle", "current": "0.4.9.15/16.0", "kind": "manual", "source": "https://dist.torproject.org/torbrowser/"},
     {"id": "python", "name": "Python deps", "kind": "pypi", "packages": {"requests": "2.34.2", "urllib3": "2.8.0", "certifi": "2026.10.23", "httpx": "0.28.1", "Pillow": "13.0.0", "pystray": "0.19.5", "cryptography": "50.0.2"}},
     {"id": "rust", "name": "Rust crates", "kind": "manual", "check": "cargo update --dry-run"},
     {"id": "opera-feed", "name": "Opera endpoint feed", "current": "runtime", "kind": "manual", "source": "https://raw.githubusercontent.com/confeden/nova_updates/main/opera_endpoints.json"}
@@ -96,13 +97,15 @@
 - **`winws2`/mtproto**: движок поддерживает `--filter-l7=mtproto` (подтверждено
   `tests/test_zapret2_bundle.py`), но запуск требует администратора и отдельного
   WinDivert-фильтра; в рантайме не используется.
-- **`connect-ip-go`**: локальный патч обязателен для quic-go ≥ 0.65; без него
-  `nova-go` не собирается (`HTTPStream() (*Stream, error)`). Апстрим-снимок
-  `66cba32` использует удалённый `http3.ParseCapsule` и с quic-go 0.65 не
-  собирается, поэтому остаётся локальный снимок 2025-10 + патч.
+- **`connect-ip-go`**: официальный `quic-go/connect-ip-go v0.7.0` уже собран под
+  quic-go 0.65, но его API (`NewClientConn`, `ReadPacket/WritePacket`) не совпадает
+  с usque v4.2.1 (`DialH2`, `Dial`, `ReadPacketZeroCopy`, `WritePacketBuffer`).
+  Проверено: usque с официальным модулем не собирается. Остаётся локальный снимок
+  2025-10 + `HTTPStream`-патч; апстрим `Diniboy1123` 66cba32 использует удалённый
+  `http3.ParseCapsule`.
 - **Rust**: `cargo update` обновляет 21 крейт, но проверить нельзя — в окружении
-  нет `link.exe` (MSVC Build Tools). `Cargo.lock` возвращён к проверенному
-  состоянию; обновление отложено до установки Build Tools.
+  нет `link.exe` (MSVC Build Tools). Установка Build Tools через winget требует
+  UAC и не завершилась; `Cargo.lock` возвращён к проверенному состоянию.
 - **Xray-core**: локальных патчей нет, источник — стоковый архив тега; хранится
   в `Nova Android/tools/xray-core`, не в этом репозитории.
 - **Секреты**: `profiles/opera_relay.key`, `tgrelay/cf_ws.key`, `bin/` и локальные
