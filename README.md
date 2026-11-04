@@ -16,8 +16,8 @@ AppData остаются `Nova`, чтобы обновления и сущест
 
 ## Сборка
 
-[KALIOPA 1.44.2.21](https://github.com/abonent0007/KALIOPA/releases/tag/v1.44.2.21) —
-установщик `KALIOPA_Setup_1.44.2.21.exe`, SHA-256 и список отличий от upstream.
+[KALIOPA 1.44.2.22](https://github.com/abonent0007/KALIOPA/releases/tag/v1.44.2.22) —
+установщик `KALIOPA_Setup_1.44.2.22.exe`, SHA-256 и список отличий от upstream.
 
 ## Route Lab — визуальный редактор цепочки
 

@@ -8713,9 +8713,16 @@ try:
                 primary_foreign = bool(slots_runtime.primary_foreign()) if slots_runtime is not None else False
                 # Автоматика: основной выход российский, а выбранный резерв лёг — единственный
                 # зарубежный путь, который остался, это Tor. Ведём зарубежные списки через него,
-                # а не в DIRECT: иначе YouTube/EU снова упираются в блокировку.
+                # а не в DIRECT: иначе YouTube/EU снова упираются в блокировку. Это допустимо
+                # только для режима «Авто»: явно выбранные Opera/Profile/Tor не подменяем.
+                secondary_mode = ""
+                try:
+                    secondary_mode = str(get_secondary_vpn_choice().get("mode") or "").strip().lower()
+                except Exception:
+                    secondary_mode = ""
                 if (not secondary_active and not primary_foreign and tor_route_ready()
-                        and secondary_kind != nova_vpn_slots.SECONDARY_TOR):
+                        and secondary_kind != nova_vpn_slots.SECONDARY_TOR
+                        and secondary_mode == nova_vpn_slots.SECONDARY_AUTO):
                     secondary_kind = nova_vpn_slots.SECONDARY_TOR
                     secondary_active = True
                     secondary_route = "; ".join(nova_vpn_slots.secondary_pac_tokens(secondary_kind))
