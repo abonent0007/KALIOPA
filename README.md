@@ -33,6 +33,11 @@ php -S 127.0.0.1:8099 -t tools\route-editor
 
 Подробности — `tools/route-editor/README.md`.
 
+## Маршрутизация
+
+Как пакет идёт от приложения до сервера: системный PAC 1369, слоты 1370/1371,
+Telegram-релей 1372, DNS/NRPT и резервы — см. `docs/agents/routing.md`.
+
 ---
 
 ## 🌌 Nova (upstream)

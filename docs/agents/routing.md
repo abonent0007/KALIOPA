@@ -1,124 +1,236 @@
-# Маршрутизация Nova (для агентов)
+# Маршрутизация пакетов KALIOPA 1.44.2.22
 
-Всё, что видит браузер, решает PAC-файл, который генерируется в
-`nova.pyw::generate_pac` (~L8461) и отдаётся по `http://127.0.0.1:1369/nova.pac`.
-Приложение/процессы с перехватом (NovaWFP/NovaDivert/релеи) маршрутизируются отдельно —
-`resources/nova_routing_backends.py` и `resources/nova_transport_plans.py`.
+Документ описывает, как пакет от приложения на этом устройстве попадает на
+конечный сервер: кто выбирает маршрут, какие локальные порты участвуют, что
+происходит на каждом узле и где путь заканчивается. Версия — `1.44.2.22`,
+проверено на живой сборке 2026-11-04.
 
-## Порядок правил PAC (1.43.2 + локальные патчи)
+## 1. Две независимые плоскости
 
-Проверка идёт сверху вниз, первый матч выигрывает (JS-функция `FindProxyForURL`):
+```
+Прокси-трафик приложений                    Перехваченный трафик
+(Brave/Chrome/Discord/WhatsApp)             (NovaWFP / NovaDivert / WinDivert)
+        │                                           │
+        ▼                                           ▼
+  системный PAC 1369                    nova_routing_backends.py
+        │                               nova_transport_plans.py
+        ▼                                           │
+  токен прокси из PAC                               │
+        └──────────────┬────────────────────────────┘
+                       ▼
+             слоты 1370 / 1371 / DIRECT
+```
 
-1. `localhost`, IP-литералы, plain hostnames → DIRECT.
-2. Режим PAC: `off` → DIRECT; `full` → весь трафик в выбранный слот (`pac_full_route`),
-   кроме `pac_full_exclude`-исключений; явный режим приложения действует и здесь.
-3. `user_direct` → DIRECT (пользовательский список «всегда напрямую»).
-4. `user_ru` → RU-маршрут (VPN), `user_eu` → EU-маршрут (зарубежный выход).
+- **PAC-плоскость** — приложения, которые умеют системный прокси (Chromium,
+  Discord, WhatsApp, WinHTTP-клиенты). Они получают PAC по
+  `http://127.0.0.1:1369/nova.pac` и сами идут в выбранный локальный прокси.
+- **Перехват** — приложения, которые прокси не понимают. Их TCP/UDP забирает
+  WFP/Divert-слой и передаёт в те же слоты через `nova_transport_plans.py`.
+- **Telegram Desktop** — отдельная плоскость: он не использует PAC, а явно
+  ходит в SOCKS5 `127.0.0.1:1372` (релей).
+
+## 2. Полный путь браузера
+
+```
+Chrome / Edge / Discord / WhatsApp
+        │  HTTPS к example.com
+        ▼
+WinINET / WinHTTP
+        │  AutoConfigURL = http://127.0.0.1:1369/nova.pac
+        ▼
+PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
+        │  возвращает, например:
+        │  "SOCKS5 127.0.0.1:1370; PROXY 127.0.0.1:1371"
+        ▼
+браузер подключается к первому доступному токену
+        │
+        ├── SOCKS5 127.0.0.1:1370
+        │       │  nova-go (CF MASQUE / WARP)
+        │       │  HTTP/3 over UDP 443, SNI маскируется
+        │       ▼
+        │   Cloudflare edge 162.159.198.x
+        │       ▼
+        │   example.com:443 (TLS внутри туннеля)
+        │
+        ├── HTTP CONNECT 127.0.0.1:1371
+        │       │  opera-proxy
+        │       │  TLS/HTTP CONNECT к Opera edge 77.111.246.61:443 (US)
+        │       ▼
+        │   Opera VPN edge
+        │       ▼
+        │   example.com:443 (TLS внутри CONNECT)
+        │
+        └── DIRECT
+                │  ISP, при необходимости winws/DPI-bypass
+                ▼
+            example.com:443
+```
+
+Важно: PAC возвращает **список фолбэков**, но каждый отдельный пакет идёт
+только через один выбранный сокет. Смена протокола происходит в узле
+(1370 — SOCKS5/MASQUE, 1371 — HTTP CONNECT, DIRECT — ISP), а не внутри одной
+связи.
+
+### 2.1. Что решает PAC
+
+Проверка идёт сверху вниз, первый матч выигрывает (`FindProxyForURL`):
+
+1. `localhost`, IP-литералы, plain hostnames → `DIRECT`.
+2. Режим PAC: `off` → `DIRECT`; `full` → весь трафик в выбранный слот
+   (`pac_full_route = SOCKS5 127.0.0.1:1370`), кроме `pac_full_exclude`.
+3. `user_direct` → `DIRECT` (пользовательский «всегда напрямую»).
+4. `user_ru` → RU-маршрут, `user_eu` → EU-маршрут.
 5. `eu_over_exclude` → EU-маршрут (перебивает exclude).
-6. `exclude` → DIRECT.
-7. **Локальные TLD → DIRECT** — `.ru`, `.su`, `.рф`/`xn--p1ai`, `.москва`/`xn--80adxhks`,
-   `.moscow`, `.рус`/`xn--p1acf`, `.дети`/`xn--d1acj3b`, `.tatar`; локальный патч
-   (пользовательские списки выше могут перебить). `.by`/`.kz`/`.ua` автоматически
-   не включаются; их можно добавить через `NOVA_LOCAL_DIRECT_TLDS`.
-8. Явно выбранные режимы приложений (discord/telegram/whatsapp ≠ auto) → их маршрут.
-9. AI-ветки: `ai_second` → вторичный слот или DIRECT; `ai_region_direct` → DIRECT;
-   `ai_unlock` (если нет ни одного зарубежного выхода) → DIRECT для пересечения с `eu`.
-   В `ai_second` также входят точные Google AI-хосты (`gemini.google.com`,
-   `aistudio.google.com` и т.п.): `list/second.txt` содержит только родительский
-   `gemini.google`, а `matchDomain` не покрывает им `.com`-хост. Без этого Gemini
-   уходил в `foreign_default` (основной RU-выход) и видел российский IP.
-10. `eu` (second.txt) → EU-маршрут.
-11. `youtube` → YouTube-маршрут (порядок зависит от зарубежности выхода основного слота).
-12. `ru` (main.txt) → RU-маршрут.
-13. `discord`, `telegram`, `whatsapp` → свои маршруты; Telegram-релей 1372 перебивает
-    маршрут только в режиме auto.
-14. Cloudflare-IP fallback: домен без совпадений, чей IP в `ip/cloudflare.txt`, → RU-маршрут.
-15. **`foreign_default_route`** — локальный патч форка: по умолчанию **VPN** (RU-маршрут:
-    WARP/MASQUE/VLESS → резервные слоты). `NOVA_PAC_FOREIGN_VPN_DEFAULT=0` /
-    `"foreign_default":"direct"` возвращают прежний DIRECT.
+6. `exclude` → `DIRECT`.
+7. Локальные TLD → `DIRECT`: `.ru`, `.su`, `.рф`/`xn--p1ai`,
+   `.москва`/`xn--80adxhks`, `.moscow`, `.рус`/`xn--p1acf`,
+   `.дети`/`xn--d1acj3b`, `.tatar`. Дополнительно — `NOVA_LOCAL_DIRECT_TLDS`.
+8. Явные режимы приложений (`discord`/`telegram`/`whatsapp`/`ai_apps` ≠ auto)
+   → их маршрут.
+9. AI-домены: `ai_apps` (в текущей сборке `opera`) → 1371; `ai_unlock`/NRPT
+   работают отдельно.
+10. `eu` (`list/second.txt`) → EU-маршрут.
+11. `youtube` (`list/youtube.txt`) → YouTube-маршрут.
+12. `ru` (`list/main.txt`) → RU-маршрут.
+13. `discord`, `telegram`, `whatsapp` → профильные маршруты.
+14. Cloudflare-IP fallback (`ip/cloudflare.txt`) → RU-маршрут.
+15. `foreign_default` → RU-маршрут (VPN), если не выключен
+    `NOVA_PAC_FOREIGN_VPN_DEFAULT=0` / `"foreign_default":"direct"`.
 
-WinINET/WinHTTP используют `FindProxyForURLEx` (та же логика, но без SOCKS5-токенов).
+### 2.2. Текущие значения маршрутов (live)
 
-## Маршруты и слоты
-
-- **Основной слот** — SOCKS5 `127.0.0.1:1370` (WARP/MASQUE; при VLESS-профиле его держит nova-xray).
-- **Вторичный слот** — HTTP `127.0.0.1:1371` (Opera), либо Tor `1375/1378`, либо импортированный
-  профиль `1379/1380` (SOCKS5/HTTP).
-- **RU-маршрут**: primary (если жив) → secondary (если жив) → `last_resort`.
-- **EU-маршрут**: primary только если его измеренный выход **за рубежом**; всегда secondary;
-  хвост `last_resort` (чтобы не отдавать гео-сайтам российский адрес).
-- **YouTube-маршрут**: если primary выходит за рубеж — primary-first, иначе secondary-first;
-  с Tor вторичным — primary-first (видео через Tor нецелесообразно).
-- **`last_resort`** = `DIRECT` (по умолчанию) или `SOCKS5 127.0.0.1:1` при
-  `NOVA_PAC_KILLSWITCH=1` (сознательный «kill switch»).
-- **Telegram**: при явно выбранном warp/opera — pinned egress (без подмены на соседний слот и без
-  DIRECT-хвоста); в auto при живом релее — `SOCKS5/PROXY 127.0.0.1:1372` + прежняя цепочка.
-
-## Списки (`list/`, `ip/`)
-
-| Файл | Смысл |
+| Категория | Токен PAC |
 |---|---|
-| `main.txt` | RU-список: сайты, блокируемые DPI (не гео) → туннель |
-| `second.txt` | EU-список: гео-ограничения → зарубежный выход |
-| `exclude.txt` | всегда DIRECT (CDN, банки и т.п.) |
-| `ai.txt` | AI-сервисы (взаимодействует с DNS-разблокировщиком/NRPT) |
-| `cloudflare.txt` | Cloudflare-домены; `ip/cloudflare.txt` — CIDR для fallback |
-| `youtube.txt`, `telegram.txt`, `whatsapp.txt`, `discord.txt`, `games.txt` | профильные списки |
-| `u_main.txt`, `u_second.txt`, `user_direct` | пользовательские списки (могут отсутствовать) |
-| `rkn.txt` | панель проб для проверки стратегий (не маршрут) |
-| `general.txt` | большой агрегированный список для проверок/winws-хостлистов (не PAC-маршрут) |
+| RU (main.txt, auto/fallback) | `SOCKS5 127.0.0.1:1370; PROXY 127.0.0.1:1371` |
+| EU / YouTube | `PROXY 127.0.0.1:1371; SOCKS5 127.0.0.1:1370` |
+| AI-приложения (`ai_apps=opera`) | `PROXY 127.0.0.1:1371` |
+| `.ru`, `exclude`, локальные TLD | `DIRECT` |
+| Остальной мир (`foreign_default`) | RU-маршрут → VPN |
+| Резервы Tor/VLESS | в PAC не попадают, пока вторичный слот не переключён на них явно |
 
-Обновление: `resources/nova_list_sync.py::sync_from_network` — `manifest.json` + sha256 из
-`confeden/nova_updates/nova_pc` через зеркала (raw.githack, raw.githubusercontent, jsdelivr)
-и прокси; в установленной сборке выполняется при старте (list_sync_worker).
+Проверка: `python tools/route_policy_check.py` → `policy OK: PAC
+1370/1371/DIRECT, Telegram WARP, Tor/VLESS reserve`.
 
-## Ключевые env-переменные
+## 3. Слоты и что за ними стоит
 
-| Переменная | Действие |
+### Основной слот — SOCKS5 127.0.0.1:1370
+
+Один backend за раз, выбирается в `temp/profile-selection.json`:
+
+| Backend | Что делает |
 |---|---|
-| `NOVA_PAC_KILLSWITCH=1` | при падении VPN не пускать напрямую (blackhole `SOCKS5 127.0.0.1:1`) |
-| `NOVA_PAC_FOREIGN_VPN_DEFAULT=1` | **наш патч**: весь не-.ru трафик без совпадений — через VPN |
-| `NOVA_ROUTING_BACKEND=auto\|current\|public-hybrid\|windivert-hybrid` | выбор транспорта |
-| `NOVA_SYNC_WINHTTP_PROXY=1/0` | синхронизация WinHTTP с 1371 |
-| `NOVA_DNS_UNBLOCK`, `NOVA_NRPT_*` | DNS-разблокировщик/NRPT-правила |
-| `NOVA_WFP_ENABLE*`, `NOVA_WINDIVERT_*` | перехват приложений (WFP/Divert) |
-| `NOVA_OPERA_FAKE_SNI`, `NOVA_OPERA_*` | Opera-слот: SNI-подстановка, релеи |
-| `NOVA_WARP_*` (порт, сервис, ранний старт) | управление WARP/MASQUE |
-| `NOVA_AUTOTUNE`, `NOVA_SAFE_FILTER_MODE` | режимы обучения стратегий |
+| **Cloudflare MASQUE** (текущий) | `nova-go`: SOCKS5 → HTTP/3 MASQUE over UDP 443 → Cloudflare edge |
+| Cloudflare AWG | `wireproxy-awg`: SOCKS5 → AmneziaWG → Cloudflare |
+| Proton AWG | `wireproxy-awg`: SOCKS5 → AmneziaWG → Proton |
+| VLESS | `nova-xray`: SOCKS5 → VLESS/REALITY → edge |
+| Custom AWG | `wireproxy-awg` с пользовательским конфигом |
 
-Полный список — `grep -o "NOVA_[A-Z0-9_]*" nova.pyw | sort -u` (46 переменных в 1.43.2).
+Сейчас: `MASQUE/Cloudflare MASQUE 2`; выход **RU**, поэтому EU-сайты через него
+не отправляются (см. таблицу EU).
 
-## Локальные модификации PAC (не из upstream)
+### Вторичный слот — один из трёх
 
-1. Правило `*.ru → DIRECT` вставлено после явных пользовательских списков/режимов приложений
-   и до AI-веток — чтобы явный выбор владельца оставался сильнее.
-2. `foreign_default` (+ env `NOVA_PAC_FOREIGN_VPN_DEFAULT`) — выключатель «весь остальной
-   трафик через VPN»; по умолчанию выключен (DIRECT + winws).
+| Режим | Локальные порты | Куда |
+|---|---|---|
+| **Opera** (текущий) | HTTP `1371` | `opera-proxy` → Opera edge `77.111.246.61:443` (US) |
+| Tor (резерв) | SOCKS5 `1375`, HTTP `1378` | Tor network, только TCP |
+| VLESS-профиль (резерв) | SOCKS5 `1379`, HTTP `1380` | `nova-xray` → VLESS edge |
 
-При обновлении исходников из upstream эти правки нужно переприменить.
+`secondary.mode` в `temp/routing_settings.json` задаёт один из них; одновременно
+живёт только один. Сейчас Opera US, порты 1375/1378/1379/1380 закрыты.
 
-## Замеры (2026-10-18, эта машина)
+### `last_resort`
 
-Медиана 3 попыток, `curl time_total` (мс):
+`DIRECT` по умолчанию; при `NOVA_PAC_KILLSWITCH=1` — `SOCKS5 127.0.0.1:1`
+(сознательный blackhole, чтобы не выпустить трафик напрямую при падении VPN).
 
-| Сайт | DIRECT | WARP 1370 | Opera 1371 |
-|---|---|---|---|
-| ya.ru | **167** | 808 | 611 |
-| vk.com | **432** | 599 | 657 |
-| gosuslugi.ru | **481** | 648 | 616 |
-| ozon.ru | **167** | 460 | 661 |
-| sberbank.ru | **257** | 279 | 639 |
-| gstatic (206/204) | **268** | 462 | 515 |
+## 4. Telegram: отдельный путь
 
-Вывод: для `.ru` прямой путь в 1.5–4.8 раза быстрее туннелей — это и есть выигрыш
-от правила `*.ru → DIRECT`. Для заблокированных зарубежных сайтов DIRECT даёт `000/403`
-или таймауты — там нужны слоты VPN.
+```
+Telegram Desktop
+   │  SOCKS5 127.0.0.1:1372
+   ▼
+tgrelay (SOCKS5/HTTP 1372)
+   │  pinned egress: warp-socks
+   ▼
+nova-go SOCKS5 127.0.0.1:1370
+   │  MASQUE / WARP
+   ▼
+Cloudflare edge
+   ▼
+Telegram DC 149.154.167.x:443 (MTProto)
+```
 
-## Ручная проверка PAC
+- `routes.telegram=warp` закрепляет релей на `warp-socks`; `opera-http` и
+  Tor-HTTP для MTProto исключены.
+- TLS-терминатор `127.0.0.1:1374` — helper релея (JA4/маскировка), не
+  отдельный хоп и не прокси для браузера.
+- Если WARP не поднят, релей не уходит в Opera/Tor/DIRECT, а ждёт/закрывает
+  соединение: так MTProto не попадает в неподходящий выход.
+
+## 5. DNS: отдельная плоскость
+
+```
+Приложение
+   │  DNS UDP/TCP 53
+   ▼
+Windows DNS + NRPT-правила (AI-домены)
+   │  каскад dns-ai → comss → geohide
+   ▼
+DNS-ответ приложению
+```
+
+- DNS не проходит через PAC и не занимает слоты 1370/1371.
+- NRPT направляет AI-домены в разблокирующий резолвер; остальное — системный
+  DNS.
+- Локальный DoH `127.0.0.1:53` включается только `NOVA_DOH_GLOBAL=1`
+  (`nova_doh_service` + снимок DNS-адаптеров).
+
+## 6. Что происходит при выборе резерва
+
+- **Tor** (`secondary.mode=tor`): браузерный EU/YouTube получает
+  `SOCKS5 1375; PROXY 1378`; Telegram всё равно остаётся на WARP.
+- **VLESS** (`secondary.mode=profile`): EU получает `SOCKS5 1379; PROXY 1380`;
+  если VLESS выбран основным — он слушает 1370.
+- **Proton AWG / CF AWG** — это primary-backend'ы на 1370; при выборе заменяют
+  MASQUE, а не добавляются вторым слоем. Одновременно активен только один.
+- Резервные порты не появляются в PAC, пока режим не выбран явно.
+
+## 7. Проверка вживую
 
 ```powershell
-$pac = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:1369/nova.pac | Select-Object -Expand Content
-$pac -match 'host\.slice\(-3\) === "\.ru"'
+# политика и порты
+python tools/route_policy_check.py
+
+# PAC отвечает
+curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:1369/nova.pac
+
+# SOCKS5 1370 (MASQUE)
 curl.exe -s -o NUL -w "%{http_code}" --socks5-hostname 127.0.0.1:1370 https://www.gstatic.com/generate_204
+
+# HTTP 1371 (Opera)
 curl.exe -s -o NUL -w "%{http_code}" --proxy http://127.0.0.1:1371 https://www.gstatic.com/generate_204
+
+# Telegram relay: проверять живым Telegram; в логе должен быть route=warp-socks
+Get-Content "$env:LOCALAPPDATA\Nova\temp\nova_console.log" -Tail 50 | Select-String "TgRelay"
 ```
+
+Ожидаемо: PAC 200, SOCKS5/HTTP — 204, Telegram relay отвечает; в логе
+`[TgRelay]` маршрут `warp-socks`, `502` = 0.
+
+## 8. Текущее живое состояние (2026-11-04)
+
+| Параметр | Значение |
+|---|---|
+| Версия | 1.44.2.22 |
+| Основной слот | CF MASQUE, SOCKS5 1370, выход RU |
+| Вторичный слот | Opera US, HTTP 1371, `77.111.246.61` |
+| Telegram | relay 1372 → warp-socks 1370 → DC |
+| DNS | NRPT, DoH выключен |
+| Tor / VLESS | закрыты (1375/1378/1379/1380) |
+| PAC | 1369, режим hybrid, foreign_default=VPN |
+| `502` в релее | 0 |
+
+Примечание: в Route Lab узел `opera_edge` подписан `77.111.247.19 · US`, но
+`.247.19` — это SE; текущий US-адрес — `77.111.246.61`. Подпись графа не
+влияет на маршрутизацию: регион задаётся `opera_region=US`.
