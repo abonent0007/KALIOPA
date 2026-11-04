@@ -42,7 +42,7 @@
 Актуальный релиз: **[v1.44.2.23](https://github.com/abonent0007/KALIOPA/releases/tag/v1.44.2.23)**.
 
 ## Донаты на дальнейшее развитие принимаются по ссылке ниже:
-**[Благодарность для вдохновения развивать дальше проект ](https://www.sberbank.ru/ru/choise_bank?requisiteNumber=79684520007&bankCode=100000000111)**
+**[Ваша помощь в развитии это вклад в свободный интернет для всех.](https://www.sberbank.ru/ru/choise_bank?requisiteNumber=79684520007&bankCode=100000000111)**
 
 ## Как идёт трафик
 
