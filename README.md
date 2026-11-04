@@ -19,6 +19,20 @@ AppData остаются `Nova`, чтобы обновления и сущест
 [KALIOPA 1.44.2.21](https://github.com/abonent0007/KALIOPA/releases/tag/v1.44.2.21) —
 установщик `KALIOPA_Setup_1.44.2.21.exe`, SHA-256 и список отличий от upstream.
 
+## Route Lab — визуальный редактор цепочки
+
+![KALIOPA Route Lab](docs/assets/kaliopa-route-lab.png)
+
+`tools/route-editor` — PHP-страница, где можно собрать цепочку узлов (PAC, WARP,
+Opera, Tor, релей, VLESS, сервер), менять порядок и транспорт, а внизу получить
+JSON-конфигурацию и готовый промпт для агента.
+
+```powershell
+php -S 127.0.0.1:8099 -t tools\route-editor
+```
+
+Подробности — `tools/route-editor/README.md`.
+
 ---
 
 ## 🌌 Nova (upstream)
