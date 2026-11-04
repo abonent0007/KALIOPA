@@ -1,5 +1,6 @@
 """Route Lab: страница, API и ассеты на месте, пресеты не потеряны."""
 
+import json
 import unittest
 from pathlib import Path
 
@@ -29,6 +30,15 @@ class RouteEditorTests(unittest.TestCase):
     def test_routes_storage_is_not_committed(self):
         ignore = (BASE / "routes" / ".gitignore").read_text(encoding="utf-8")
         self.assertIn("*.json", ignore)
+
+    def test_default_kaliopa_template_is_configured(self):
+        template = json.loads((BASE / "templates" / "kaliopa-clean.json").read_text(encoding="utf-8"))
+        self.assertEqual("kaliopa-clean", template["name"])
+        self.assertEqual(24, len(template["nodes"]))
+        self.assertEqual(29, len(template["edges"]))
+        node_ids = {node["id"] for node in template["nodes"]}
+        for required in ("pac", "warp", "opera", "relay", "dns", "proton", "cf_awg", "tor", "xray"):
+            self.assertIn(required, node_ids)
 
 
 if __name__ == "__main__":

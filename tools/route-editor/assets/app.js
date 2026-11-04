@@ -755,21 +755,48 @@
     }
   }
 
+  function applyGraph(data, record = true) {
+    if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+      throw new Error("в JSON нет массивов nodes/edges");
+    }
+    if (record) pushHistory();
+    state.name = data.name || "KALIOPA template";
+    state.notes = data.notes || "";
+    state.nodes = data.nodes;
+    state.edges = data.edges;
+    state.selected = null;
+    state.connectFrom = null;
+    state.nextId = 1 + Math.max(
+      0,
+      ...state.nodes.map((n) => Number(String(n.id).split("-").pop()) || 0),
+      ...state.edges.map((e) => Number(String(e.id).split("-").pop()) || 0),
+    );
+    syncMetaInputs();
+    renderAll();
+    markDirty();
+  }
+
+  async function loadTemplate(record = true) {
+    try {
+      const response = await fetch("templates/kaliopa-clean.json", { cache: "no-store" });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      applyGraph(await response.json(), record);
+      $("#savedState").textContent = "шаблон Kaliopa";
+      $("#statusDot").classList.add("saved");
+      return true;
+    } catch (error) {
+      toast("Шаблон Kaliopa не загружен: " + error.message, true);
+      return false;
+    }
+  }
+
   async function loadFile(file) {
     if (!file) return;
     try {
       const response = await fetch(`?action=load&file=${encodeURIComponent(file)}`, { headers: { Accept: "application/json" } });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "load failed");
-      pushHistory();
-      state.name = data.name || "";
-      state.notes = data.notes || "";
-      state.nodes = Array.isArray(data.nodes) ? data.nodes : [];
-      state.edges = Array.isArray(data.edges) ? data.edges : [];
-      state.selected = null;
-      state.connectFrom = null;
-      syncMetaInputs();
-      renderAll();
+      applyGraph(data, true);
       $("#savedState").textContent = `загружено · ${file.replace(/\.json$/, "")}`;
       $("#statusDot").classList.add("saved");
       toast(`Загружено: ${file}`);
@@ -911,6 +938,10 @@
     $$(".preset").forEach((button) => {
       button.addEventListener("click", () => {
         if (state.nodes.length && !confirm("Заменить текущую схему пресетом?")) return;
+        if (button.dataset.preset === "kaliopa") {
+          loadTemplate();
+          return;
+        }
         loadPreset(button.dataset.preset);
       });
     });
@@ -986,26 +1017,21 @@
     refreshFiles();
   }
 
-  // Restore a draft only if it exists and the user asks via hash; avoids overriding presets.
-  function init() {
+  // Открываем готовый шаблон Kaliopa; при отсутствии файла — старый current.
+  async function init() {
     bind();
-    loadPreset("current", false);
+    const loaded = await loadTemplate(false);
+    if (!loaded) loadPreset("current", false);
     if (location.hash === "#draft") {
       try {
         const raw = localStorage.getItem("kaliopa-route-draft");
         if (raw) {
-          const data = JSON.parse(raw);
-          state.name = data.name || state.name;
-          state.notes = data.notes || "";
-          state.nodes = data.nodes || [];
-          state.edges = data.edges || [];
-          syncMetaInputs();
-          renderAll();
+          applyGraph(JSON.parse(raw), false);
           toast("Черновик восстановлен");
         }
       } catch (_) {}
     }
-    setTimeout(fitView, 120);
+    setTimeout(fitView, 160);
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
