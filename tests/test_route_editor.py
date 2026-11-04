@@ -40,6 +40,17 @@ class RouteEditorTests(unittest.TestCase):
         for required in ("pac", "warp", "opera", "relay", "dns", "proton", "cf_awg", "tor", "xray"):
             self.assertIn(required, node_ids)
 
+    def test_launch_and_stop_batch_files(self):
+        root = BASE.parents[1]
+        start = (root / "start-route-lab.bat").read_text(encoding="utf-8")
+        stop = (root / "stop-route-lab.bat").read_text(encoding="utf-8")
+        self.assertIn("php", start.lower())
+        self.assertIn("127.0.0.1:8099", start)
+        self.assertIn("Ctrl+C", start)
+        self.assertIn("8099", stop)
+        self.assertIn("taskkill", stop.lower())
+        self.assertTrue((BASE / "setup-php.bat").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

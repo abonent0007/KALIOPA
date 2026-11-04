@@ -15,6 +15,16 @@ Proton AWG / CF AWG. Кнопка **«Шаблон Kaliopa»** перезагр�
 
 ## Запуск
 
+Двойной клик по **`start-route-lab.bat`** в корне репозитория — сервер
+запускается на `http://127.0.0.1:8099/`. Остановка — **Ctrl+C** в окне сервера.
+Если окно потерялось, запусти `stop-route-lab.bat`.
+
+Если PHP не установлен, `start-route-lab.bat` один раз скачает официальный
+portable PHP 8.4 в `%LOCALAPPDATA%\KaliopaRouteLab\php` (или запусти
+`tools\route-editor\setup-php.bat` вручную).
+
+Альтернатива без батника:
+
 ```powershell
 php -S 127.0.0.1:8099 -t tools\route-editor
 ```

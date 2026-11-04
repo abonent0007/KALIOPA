@@ -73,11 +73,12 @@ DNS → NRPT (AI-домены) → dns-ai / comss / geohide
 
 ## Route Lab
 
-В репозитории есть визуальный редактор цепочки:
+Двойной клик по **`start-route-lab.bat`** — сервер запускается на
+`http://127.0.0.1:8099/`, остановка — **Ctrl+C** в этом окне. Если окно потерялось,
+используй `stop-route-lab.bat`.
 
-```powershell
-php -S 127.0.0.1:8099 -t tools\route-editor
-```
+При первом запуске без PHP скрипт скачает официальный portable PHP 8.4 в
+`%LOCALAPPDATA%\KaliopaRouteLab\php`. Вручную: `tools\route-editor\setup-php.bat`.
 
 Открыть `http://127.0.0.1:8099/`. При старте загружается шаблон **Kaliopa**
 (`tools/route-editor/templates/kaliopa-clean.json`, 24 узла / 29 связей).
