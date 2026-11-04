@@ -156,7 +156,7 @@ if (isset($_GET['action']) && $_GET['action'] !== '') {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="assets/app.css?v=<?= (int)@filemtime(__DIR__ . '/assets/app.css') ?>">
 </head>
 <body>
 <div class="ambient ambient-a"></div>
@@ -310,6 +310,6 @@ if (isset($_GET['action']) && $_GET['action'] !== '') {
   </div>
 </dialog>
 
-<script src="assets/app.js"></script>
+<script src="assets/app.js?v=<?= (int)@filemtime(__DIR__ . '/assets/app.js') ?>"></script>
 </body>
 </html>
