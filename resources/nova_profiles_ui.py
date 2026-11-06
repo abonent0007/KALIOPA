@@ -1188,6 +1188,11 @@ class ProfilesWindow:
                           "effective": {"mode": "auto", "group": "", "profile_id": "", "reason": ""},
                           "runtime": {}, "jobs": {}, "tor": None, "errors": [],
                           "subs": [], "subs_loaded": False}
+        # The file half of a snapshot is expensive (550–900 profile files, stats and
+        # subscriptions JSON) and changes only when a directory/file is touched. Keep the last
+        # read together with a cheap mtime/size signature; status getters still run every tick.
+        self._file_cache_signature = None
+        self._file_cache = {}
         self._optimistic_selection = None  # (selection, set_at)
         self._selected_ids = {}
         self._reveal_ids = {}
@@ -1752,6 +1757,46 @@ class ProfilesWindow:
         started = time.time()
         self._run_async("NovaProfilesRefresh", lambda: self._collect_snapshot(started), self._on_snapshot)
 
+    @staticmethod
+    def _profile_tree_signature(base_dir, module, subs_module):
+        """Cheap witness that the file half of a snapshot would be identical.
+
+        Directory mtimes change on add/remove/rename (the app writes profiles via
+        atomic replace), while stats/selection/subscriptions change on every
+        outcome or edit. File contents edited in place are the one case this does
+        not see; the profile editor writes new files, so it is acceptable for a
+        display cache.
+        """
+        parts = []
+        if module is not None:
+            try:
+                parts.append(("profiles", os.stat(module.profiles_dir(base_dir)).st_mtime_ns))
+            except OSError:
+                parts.append(("profiles", 0))
+            for group in getattr(module, "GROUPS", ()):
+                try:
+                    st = os.stat(os.path.join(module.profiles_dir(base_dir), group))
+                    parts.append((group, st.st_mtime_ns, st.st_size))
+                except OSError:
+                    parts.append((group, 0, 0))
+            for name, path_fn in (("stats", module.stats_path), ("selection", module.selection_path)):
+                try:
+                    st = os.stat(path_fn(base_dir))
+                    parts.append((name, st.st_mtime_ns, st.st_size))
+                except OSError:
+                    parts.append((name, 0, 0))
+        else:
+            parts.append(("profiles-module", 0))
+        if subs_module is not None:
+            try:
+                st = os.stat(subs_module.subscriptions_path(base_dir))
+                parts.append(("subscriptions", st.st_mtime_ns, st.st_size))
+            except OSError:
+                parts.append(("subscriptions", 0, 0))
+        else:
+            parts.append(("subs-module", 0))
+        return tuple(parts)
+
     def _collect_snapshot(self, started):
         # Worker thread: no Tk calls here.
         snap = {"started_at": started, "loaded": True, "profiles": [], "stats": {},
@@ -1766,27 +1811,51 @@ class ProfilesWindow:
             if callable(fn):
                 calls.append((self._status_calls[name], key, default, self._status_calls[name].start(fn)))
         module, error = _load_profiles_module()
+        subs_module, subs_error = _load_subs_module()
         if module is None:
             snap["errors"].append(error)
-        else:
-            try:
-                snap["profiles"] = module.list_profiles(self.base_dir)
-                snap["stats"] = module.load_stats(self.base_dir)
-                snap["selection"] = module.load_selection(self.base_dir)
-                snap["effective"] = module.resolve_effective_selection(snap["selection"], snap["profiles"])
-            except Exception as exc:
-                snap["errors"].append(f"Не удалось прочитать профили: {_error_text(exc)}")
-        subs_module, subs_error = _load_subs_module()
         if subs_module is None:
             # Not an error line in the window: a build without the module simply has no such tab,
             # and the tab itself says so when it is opened.
             self._log_once(subs_error)
+
+        signature = self._profile_tree_signature(self.base_dir, module, subs_module)
+        if module is not None and signature == self._file_cache_signature:
+            snap.update(self._file_cache)
         else:
-            try:
-                snap["subs"] = subs_module.load(self.base_dir)
-                snap["subs_loaded"] = True
-            except Exception as exc:
-                snap["errors"].append(f"Не удалось прочитать подписки: {_error_text(exc)}")
+            profiles_ok = module is not None
+            subs_ok = True
+            if module is not None:
+                try:
+                    profiles = module.list_profiles(self.base_dir)
+                    stats = module.load_stats(self.base_dir)
+                    selection = module.load_selection(self.base_dir)
+                    snap.update({
+                        "profiles": profiles,
+                        "stats": stats,
+                        "selection": selection,
+                        "effective": module.resolve_effective_selection(selection, profiles),
+                    })
+                except Exception as exc:
+                    profiles_ok = False
+                    snap["errors"].append(f"Не удалось прочитать профили: {_error_text(exc)}")
+            if subs_module is not None:
+                try:
+                    snap["subs"] = subs_module.load(self.base_dir)
+                    snap["subs_loaded"] = True
+                except Exception as exc:
+                    subs_ok = False
+                    snap["errors"].append(f"Не удалось прочитать подписки: {_error_text(exc)}")
+            if module is not None and profiles_ok and subs_ok:
+                self._file_cache_signature = signature
+                self._file_cache = {
+                    "profiles": snap["profiles"],
+                    "stats": snap["stats"],
+                    "selection": snap["selection"],
+                    "effective": snap["effective"],
+                    "subs": snap["subs"],
+                    "subs_loaded": snap["subs_loaded"],
+                }
         for call, key, default, (done, outcome, call_started) in calls:
             remaining = call_started + STATUS_GETTER_TIMEOUT_S - time.monotonic()
             if done.wait(max(0.0, remaining)):

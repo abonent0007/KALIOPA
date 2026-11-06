@@ -16050,15 +16050,18 @@ function FindProxyForURLEx(url, host) {{
         LOG_COLOR_TEXT_INFO = "#C5DFCC"
         LOG_COLOR_TEXT_FAIL = "#FF6B6B"
         SETTINGS_THEME = {
-            "bg": "#0B1410",
-            "panel": "#111B15",
-            "border": "#22402B",
-            "text": "#E5F7E8",
-            "muted": "#93AD98",
-            "pill_on_bg": "#12381D",
-            "pill_on_fg": "#D9FFE1",
-            "pill_off_bg": "#1A241D",
-            "pill_off_fg": "#8DA38F",
+            # Windows 11 dark, not the green KALIOPA tint: neutral surfaces and
+            # the system blue accent, so the popup matches Explorer/Settings.
+            "bg": "#202020",
+            "panel": "#2B2B2B",
+            "border": "#3A3A3A",
+            "text": "#FFFFFF",
+            "muted": "#A9A9A9",
+            "pill_on_bg": "#0067C0",
+            "pill_on_fg": "#FFFFFF",
+            "pill_off_bg": "#2D2D2D",
+            "pill_off_fg": "#C8C8C8",
+            "accent": "#60CDFF",
         }
     else:
         LOG_THEME = {
@@ -16085,6 +16088,7 @@ function FindProxyForURLEx(url, host) {{
             "pill_on_fg": "#145328",
             "pill_off_bg": "#E8EFEB",
             "pill_off_fg": "#6A7C6E",
+            "accent": "#0067C0",
         }
 
     log_window = None
@@ -32009,7 +32013,7 @@ function FindProxyForURLEx(url, host) {{
                 bg = SETTINGS_THEME["pill_on_bg"] if self._selected else SETTINGS_THEME["pill_off_bg"]
                 fg = SETTINGS_THEME["pill_on_fg"] if self._selected else SETTINGS_THEME["pill_off_fg"]
                 hover_fg = get_lighter_hex(fg, 0.18)
-                outline_color = OUTLINE_ACCENT_COLOR if self._hover else SETTINGS_THEME["border"]
+                outline_color = SETTINGS_THEME.get("accent", OUTLINE_ACCENT_COLOR) if self._hover else SETTINGS_THEME["border"]
                 self.itemconfig(
                     self._fill_id,
                     image=create_round_rect_img(self._width, self._height, self._radius, bg, alpha=255),

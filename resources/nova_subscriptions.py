@@ -85,8 +85,9 @@ MAX_NODES = 20000
 DEFAULT_KEEP = 120
 # And a ceiling over all of them together. Every profile is a file the «Профили» window stats on
 # each refresh, and of public nodes roughly one in five is reachable at all — past this the list
-# costs more to look at than it is worth.
-MAX_TOTAL_VLESS = 600
+# costs more to look at than it is worth. 900 leaves room for the two reserve lists while the
+# window caches the unchanged tree (see nova_profiles_ui._collect_snapshot).
+MAX_TOTAL_VLESS = 900
 
 CONNECT_TIMEOUT_S = 12.0
 READ_TIMEOUT_S = 45.0
@@ -131,6 +132,22 @@ DEFAULT_SOURCES = (
     {
         "name": "barry-far VLESS",
         "url": "https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Splitted-By-Protocol/vless.txt",
+        "kind": KIND_VLESS,
+    },
+    # Reserve public lists. `verified_configs.txt` is the maintained 500-link
+    # set (VLESS/VMess/Trojan/SS); `ru_configs.txt` is small and RU-oriented.
+    # They are deliberately `KIND_VLESS`: the body decides the protocol and
+    # `nova_vless.parse_many` imports all four the helper can start. Public
+    # nodes are untrusted and short-lived — this is a reserve, not a default
+    # route for private accounts.
+    {
+        "name": "vpn-free-russia verified (public)",
+        "url": "https://raw.githubusercontent.com/aviamastersgh/vpn-free-russia/main/verified_configs.txt",
+        "kind": KIND_VLESS,
+    },
+    {
+        "name": "vpn-free-russia RU (public)",
+        "url": "https://raw.githubusercontent.com/aviamastersgh/vpn-free-russia/main/ru_configs.txt",
         "kind": KIND_VLESS,
     },
 )
