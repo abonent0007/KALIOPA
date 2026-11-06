@@ -42,7 +42,7 @@ from tkinter import filedialog, messagebox, simpledialog
 
 __all__ = [
     "open_profiles_window", "toggle_profiles_window", "close_profiles_window", "get_profiles_window",
-    "ProfilesWindow", "ImportPreview", "FallbackPillButton", "ThemedScrollbar",
+    "ProfilesWindow", "ImportPreview", "CustomWarpSettings", "FallbackPillButton", "ThemedScrollbar",
     "TABS", "TAB_TOR", "TAB_SUBS", "ACTION_LABELS", "TAB_ACTION_ROWS", "TOR_ENTRIES",
     "IMPORT_FILETYPES", "DEFAULT_THEME", "merge_theme", "is_dark_theme", "set_pill_text",
     "format_outcome", "format_row_text", "format_selection_text", "format_runtime_text",
@@ -101,6 +101,7 @@ ACTION_LABELS = {
     "sub_delete": "Удалить",
     "generate_warp": "Сгенерировать свои",
     "generate_custom": "Сгенерировать",
+    "generate_custom_settings": "Настройки…",
     "issue_proton": "Выпустить профили",
     "register_masque": "Зарегистрировать",
     "reissue_warp": "Перевыпустить",
@@ -133,7 +134,7 @@ TAB_ACTION_ROWS = {
     GROUP_PROTON: (_MAIN_ROW,),
     GROUP_MASQUE: (_MAIN_ROW, ("delete",)),
     GROUP_VLESS: (_MAIN_ROW, ("import_file", "import_clipboard", "rename", "delete")),
-    GROUP_CUSTOM: (_MAIN_ROW, ("generate_custom", "import_file", "import_clipboard", "rename", "delete")),
+    GROUP_CUSTOM: (_MAIN_ROW, ("generate_custom", "generate_custom_settings", "import_file", "import_clipboard", "rename", "delete")),
     TAB_SUBS: (("sub_add", "sub_interval", "sub_toggle", "sub_refresh", "sub_delete"),),
     TAB_TOR: (("tor_toggle", "tor_new_identity", "tor_refresh_bridges"),),
 }
@@ -2209,6 +2210,7 @@ class ProfilesWindow:
             "folder": self._on_folder,
             "generate_warp": lambda: self._on_job("warp"),
             "generate_custom": self._on_generate_custom,
+            "generate_custom_settings": self._on_generate_custom_settings,
             "issue_proton": lambda: self._on_job("proton"),
             "register_masque": lambda: self._on_job("masque"),
             "reissue_warp": lambda: self._on_job("warp", force=True),
@@ -2849,6 +2851,23 @@ class ProfilesWindow:
         self._notice("Генерация Custom WARP запущена: профиль появится в Custom AWG и подключится", "ok")
         self.refresh_now()
 
+    def _on_generate_custom_settings(self):
+        """Open the generator settings dialog; saving persists to temp/warp-custom-settings.json."""
+        loader = getattr(self.ctx, "get_warp_custom_settings", None)
+        saver = getattr(self.ctx, "save_warp_custom_settings", None)
+        if not callable(loader) or not callable(saver):
+            self._notice("Настройки генератора недоступны в этой сборке Nova", "warn")
+            return
+        try:
+            current = loader() or {}
+        except Exception as exc:
+            self._report_error("Не удалось прочитать настройки генератора", exc)
+            current = {}
+        try:
+            CustomWarpSettings(self, current)
+        except Exception as exc:
+            self._report_error("Не удалось открыть настройки генератора", exc)
+
     def _on_delete(self):
         record = self._selected_record()
         if record is None:
@@ -3314,6 +3333,288 @@ class ImportPreview:
                 self.top.destroy()
             except tk.TclError:
                 return
+
+
+# --------------------------------------------------------------------------------------------
+# Custom WARP generator settings
+
+
+class CustomWarpSettings:
+    """«Настройки…» for the one-shot WARP generator in Custom AWG.
+
+    The dialog edits a plain dict (the module behind it is nova_warp_custom_settings);
+    this class only renders and validates. Presets are pills, because they behave like
+    the group tabs: picking one replaces every field, and editing any field marks
+    «Свой», so the owner always sees whether a preset is still in effect.
+    """
+
+    PRESET_LABELS = {
+        "optimal": "Оптимальный",
+        "fast": "Быстрый отклик",
+        "compat": "Совместимость",
+        "custom": "Свой",
+    }
+
+    def __init__(self, view, current):
+        self.view = view
+        self.top = None
+        self.entries = {}
+        self.preset = str((current or {}).get("preset") or "optimal")
+        if self.preset not in self.PRESET_LABELS:
+            self.preset = "optimal"
+        self.values = dict(current or {})
+        self._build()
+        self._load_into_fields(self.values)
+        try:
+            self.top.deiconify()
+            self.top.lift()
+            self.top.grab_set()
+            self.top.focus_force()
+        except tk.TclError:
+            pass
+
+    # -- construction ---------------------------------------------------------
+
+    def _build(self):
+        t = self.view.theme
+        top = tk.Toplevel(self.view.win)
+        top.withdraw()
+        self.top = top
+        top.title("Генератор WARP — настройки")
+        top.resizable(False, False)
+        top.configure(bg=t["bg"], bd=1, highlightthickness=1, highlightbackground=t["border"])
+        self.view._call_ctx_quiet("apply_window_icon", top)
+        try:
+            top.transient(self.view.win)
+        except tk.TclError:
+            pass
+        top.protocol("WM_DELETE_WINDOW", self.close)
+        top.bind("<Escape>", lambda _e: self.close())
+
+        outer = tk.Frame(top, bg=t["bg"], padx=12, pady=10)
+        outer.pack(fill="both", expand=True)
+        tk.Label(outer, text="Пресет", font=self.view.font_title, bg=t["bg"], fg=t["text"],
+                 anchor="w").pack(fill="x")
+        presets = tk.Frame(outer, bg=t["bg"])
+        presets.pack(fill="x", pady=(4, 2))
+        self.preset_pills = {}
+        for key in ("optimal", "fast", "compat", "custom"):
+            pill = self.view._make_pill(presets, self.PRESET_LABELS[key],
+                                        lambda k=key: self._choose_preset(k), width=118)
+            pill.pack(side="left", padx=(0, 4))
+            self.preset_pills[key] = pill
+        self.hint = tk.Label(outer, text="", font=self.view.font_text, bg=t["bg"], fg=t["muted"],
+                             anchor="w", justify="left", wraplength=470)
+        self.hint.pack(fill="x", pady=(2, 8))
+
+        endpoint = tk.Frame(outer, bg=t["bg"])
+        endpoint.pack(fill="x")
+        tk.Label(endpoint, text="Точка входа", font=self.view.font_text, bg=t["bg"], fg=t["text"],
+                 width=13, anchor="w").pack(side="left")
+        self.endpoint_pills = {}
+        for key, label in (("auto", "Авто (скан)"), ("manual", "Вручную")):
+            pill = self.view._make_pill(endpoint, label, lambda k=key: self._choose_endpoint(k),
+                                        width=104)
+            pill.pack(side="left", padx=(0, 4))
+            self.endpoint_pills[key] = pill
+        self.endpoint_host = self._entry(endpoint, 22)
+        self.endpoint_host.pack(side="left", padx=(6, 2))
+        tk.Label(endpoint, text=":", font=self.view.font_text, bg=t["bg"], fg=t["muted"]).pack(side="left")
+        self.endpoint_port = self._entry(endpoint, 6)
+        self.endpoint_port.pack(side="left", padx=(2, 0))
+
+        grid = tk.Frame(outer, bg=t["bg"])
+        grid.pack(fill="x", pady=(8, 0))
+        grid.grid_columnconfigure(1, weight=1)
+
+        def add_label(row, column, text):
+            tk.Label(grid, text=text, font=self.view.font_text, bg=t["bg"], fg=t["text"],
+                     anchor="w").grid(row=row, column=column, sticky="w", padx=(0, 4), pady=3)
+
+        def add_entry(row, column, key, width, span=1):
+            entry = self._entry(grid, width)
+            entry.grid(row=row, column=column, columnspan=span, sticky="w", padx=(0, 14), pady=3)
+            entry.bind("<KeyRelease>", lambda _e: self._mark_custom())
+            self.entries[key] = entry
+            return entry
+
+        add_label(0, 0, "DNS")
+        add_entry(0, 1, "dns", 46, span=5)
+        add_label(1, 0, "MTU")
+        add_entry(1, 1, "mtu", 6)
+        add_label(1, 2, "Keepalive, с")
+        add_entry(1, 3, "keepalive", 6)
+        add_label(2, 0, "SNI прикрытия")
+        add_entry(2, 1, "sni", 40, span=5)
+        add_label(3, 0, "Джанк")
+        add_entry(3, 1, "jc", 4)
+        add_label(3, 2, "Jmin")
+        add_entry(3, 3, "jmin", 4)
+        add_label(3, 4, "Jmax")
+        add_entry(3, 5, "jmax", 4)
+
+        tk.Label(outer, text="SNI пусто — имя выбирается автоматически; Jc/Jmin/Jmax пусто или 0 — "
+                             "случайные значения. Проверка профиля и перебор прикрытий идут всегда.",
+                 font=self.view.font_text, bg=t["bg"], fg=t["muted"], anchor="w",
+                 justify="left", wraplength=500).pack(fill="x", pady=(6, 0))
+        self.status = tk.Label(outer, text="", font=self.view.font_text, bg=t["bg"],
+                               fg=self.view._tone_color("muted"), anchor="w")
+        self.status.pack(fill="x", pady=(4, 0))
+
+        buttons = tk.Frame(outer, bg=t["bg"])
+        buttons.pack(fill="x", pady=(10, 0))
+        self.save_pill = self.view._make_pill(buttons, "Сохранить", self._save, width=104)
+        self.save_pill.set_selected(True)
+        self.save_pill.pack(side="right")
+        self.cancel_pill = self.view._make_pill(buttons, "Отмена", self.close, width=80)
+        self.cancel_pill.pack(side="right", padx=(0, 6))
+        self.reset_pill = self.view._make_pill(buttons, "Сбросить", self._reset, width=84)
+        self.reset_pill.pack(side="left")
+
+        top.update_idletasks()
+        # A minimum, not a fixed size: the preset hint wraps to a different number of lines, and a
+        # pinned height would clip the buttons on the longer ones (measured on the first build).
+        top.minsize(max(560, top.winfo_reqwidth(), buttons.winfo_reqwidth() + 24),
+                    top.winfo_reqheight())
+        self._place()
+        apply_title_bar_theme(top, self.view.dark)
+        self._refresh_pills()
+        self._refresh_hint()
+
+    def _entry(self, master, width):
+        t = self.view.theme
+        entry = tk.Entry(master, width=width, font=self.view.font_text, bd=0, relief="flat",
+                         bg=t["panel"], fg=t["text"], insertbackground=t["text"],
+                         highlightthickness=1, highlightbackground=t["border"],
+                         highlightcolor=t.get("pill_on_fg", t["text"]))
+        entry.configure(disabledbackground=t["pill_off_bg"], disabledforeground=t["muted"])
+        return entry
+
+    def _place(self):
+        try:
+            owner = self.view.win
+            width = self.top.winfo_reqwidth()
+            x = owner.winfo_rootx() + max(0, (owner.winfo_width() - width) // 2)
+            y = owner.winfo_rooty() + 70
+            self.top.geometry(f"+{max(0, x)}+{max(0, y)}")
+        except tk.TclError:
+            pass
+
+    # -- state ----------------------------------------------------------------
+
+    def alive(self):
+        try:
+            return bool(self.top is not None and self.top.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def _refresh_pills(self):
+        for key, pill in self.preset_pills.items():
+            pill.set_selected(key == self.preset)
+        for key, pill in self.endpoint_pills.items():
+            pill.set_selected(key == self.values.get("endpoint_mode", "auto"))
+
+    def _refresh_hint(self):
+        import nova_warp_custom_settings as settings
+        preset = settings.PRESETS.get(self.preset)
+        self.hint.configure(text=preset["hint"] if preset else
+                            "Свои значения: пресет больше не применяется.")
+
+    def _load_into_fields(self, values):
+        import nova_warp_custom_settings as settings
+        data = settings.normalize(values)
+        self.values = dict(data)
+        for key in ("dns", "mtu", "keepalive", "sni", "jc", "jmin", "jmax"):
+            entry = self.entries[key]
+            entry.delete(0, "end")
+            value = data.get(key, "")
+            entry.insert(0, "" if value in (0, "0") else str(value))
+        for entry, value in ((self.endpoint_host, data.get("endpoint_host", "")),
+                             (self.endpoint_port, data.get("endpoint_port", 2408))):
+            entry.delete(0, "end")
+            entry.insert(0, str(value))
+        self._apply_endpoint_state()
+        self._refresh_pills()
+        self._refresh_hint()
+
+    def _apply_endpoint_state(self):
+        manual = self.values.get("endpoint_mode") == "manual"
+        state = "normal" if manual else "disabled"
+        self.endpoint_host.configure(state=state)
+        self.endpoint_port.configure(state=state)
+
+    def _choose_preset(self, key):
+        import nova_warp_custom_settings as settings
+        self.preset = key
+        if key == "custom":
+            self.values["preset"] = "custom"
+            self._refresh_pills()
+            self._refresh_hint()
+            return
+        self._load_into_fields(settings.apply_preset(key, self.values))
+
+    def _choose_endpoint(self, key):
+        self.values["endpoint_mode"] = key
+        self._apply_endpoint_state()
+        self._refresh_pills()
+        self._mark_custom()
+
+    def _mark_custom(self):
+        if self.preset != "custom":
+            self.preset = "custom"
+            self.values["preset"] = "custom"
+            self._refresh_pills()
+            self._refresh_hint()
+
+    def _collect(self):
+        import nova_warp_custom_settings as settings
+        data = dict(self.values)
+        data["preset"] = self.preset
+        data["endpoint_host"] = self.endpoint_host.get().strip()
+        data["endpoint_port"] = self.endpoint_port.get().strip()
+        for key in ("dns", "mtu", "keepalive", "sni", "jc", "jmin", "jmax"):
+            data[key] = self.entries[key].get().strip()
+        return settings.normalize(data)
+
+    # -- actions --------------------------------------------------------------
+
+    def _reset(self):
+        import nova_warp_custom_settings as settings
+        self.preset = "optimal"
+        self._load_into_fields(settings.DEFAULTS)
+        self.set_status("Значения пресета «Оптимальный»", "muted")
+
+    def _save(self):
+        data = self._collect()
+        if data["endpoint_mode"] == "manual" and not data["endpoint_host"]:
+            self.set_status("Укажи хост точки входа или выбери «Авто»", "warn")
+            return
+        raw_junk = [self.entries[key].get().strip() for key in ("jc", "jmin", "jmax")]
+        if any(raw_junk) and not all(raw_junk):
+            self.set_status("Для джанка заполни все три поля или ни одного", "warn")
+            return
+        if not self.view._call_ctx("save_warp_custom_settings", data,
+                                   error_prefix="Настройки не сохранены"):
+            self.set_status("Не удалось сохранить настройки", "fail")
+            return
+        self.view._notice("Настройки генератора сохранены", "ok")
+        self.close()
+
+    def set_status(self, text, tone="muted"):
+        if self.alive():
+            self.status.configure(text=text, fg=self.view._tone_color(tone))
+
+    def close(self):
+        if not self.alive():
+            return
+        try:
+            self.top.grab_release()
+        except tk.TclError:
+            pass
+        try:
+            self.top.destroy()
+        except tk.TclError:
+            return
 
 
 # --------------------------------------------------------------------------------------------

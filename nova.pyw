@@ -313,6 +313,7 @@ import nova_local_direct
 import nova_profile_rotation
 import nova_tk_clipboard
 import nova_warp_generator
+import nova_warp_custom_settings
 import nova_proton
 import nova_captcha_window
 import nova_dns_endpoints
@@ -6320,18 +6321,26 @@ try:
             return self._run("warp", _work, wait, "NovaWarpGenerate")
 
         def generate_custom(self, wait=False):
-            """One locally generated WARP/AWG profile in Custom AWG, then select and connect."""
+            """One locally generated WARP/AWG profile in Custom AWG, then select and connect.
+
+            The knobs come from «Настройки генератора…» (nova_warp_custom_settings): a preset
+            plus optional manual endpoint/DNS/MTU/keepalive/SNI/junk. A broken settings file
+            degrades to the verified defaults instead of failing the run.
+            """
             def _work():
                 nova_go = self._nova_go_path()
                 if not os.path.exists(nova_go):
                     self.log_func("[WARP-ген] Custom: nova-go.exe не найден.")
                     return False, "nova-go.exe не найден"
+                options = nova_warp_custom_settings.resolve(
+                    nova_warp_custom_settings.load(get_base_dir()))
                 result = nova_warp_generator.generate_custom_one(
                     get_base_dir(),
                     nova_go,
                     log=self.log_func,
                     api_proxy=_api_proxies() or None,
                     progress=self._progress("warp"),
+                    **options,
                 )
                 if not result.get("ok"):
                     return False, f"не удалось: {result.get('reason') or 'причина неизвестна'}"
@@ -33441,6 +33450,12 @@ function FindProxyForURLEx(url, host) {{
 
             def generate_custom(self):
                 get_profile_jobs().generate_custom()
+
+            def get_warp_custom_settings(self):
+                return nova_warp_custom_settings.load(get_base_dir())
+
+            def save_warp_custom_settings(self, settings):
+                return nova_warp_custom_settings.save(get_base_dir(), settings)
 
             def issue_proton(self, force=False):
                 get_profile_jobs().issue_proton(force=bool(force), interactive=True)

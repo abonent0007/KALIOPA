@@ -138,6 +138,12 @@ class ProbeTests(unittest.TestCase):
         self.assertFalse(self.profile_path().exists())
         self.assertEqual(gen.PROBE_ATTEMPTS, probe.call_count)
 
+    def test_preset_can_narrow_the_probe_loops(self):
+        with mock.patch.object(gen, "_probe_config", return_value=False) as probe:
+            result = self.generate(probe, endpoint_attempts=1, sni_attempts=1)
+        self.assertFalse(result["ok"], result)
+        self.assertEqual(1, probe.call_count)
+
     def test_probe_disabled_writes_without_checking(self):
         guard = mock.Mock(side_effect=AssertionError("no probe"))
         result = self.generate(guard, probe=False)

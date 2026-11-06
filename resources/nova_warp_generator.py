@@ -309,6 +309,15 @@ def diversify(endpoints: list[dict], max_per_subnet: int = MAX_PER_SUBNET) -> li
     return head + tail
 
 
+def _attempts_limit(value, default: int, high: int) -> int:
+    """Bound for the probe loops: the preset may widen or narrow them, never past `high`."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(high, number))
+
+
 def _durable_endpoints(endpoints: list[dict]) -> list[dict]:
     """Keep the host, drop an exotic port for a standard WARP one.
 
@@ -1181,7 +1190,8 @@ def _probe_config(text: str, base_dir: str, wireproxy_path: str,
 
 def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress=None,
                         host="", port=0, dns="", mtu=1280, keepalive=25, sni="", junk=None,
-                        wireproxy_path="", probe=True) -> dict:
+                        wireproxy_path="", probe=True, endpoint_attempts=None,
+                        sni_attempts=None) -> dict:
     """Create one WARP/AWG profile in `profiles/Custom` and leave the rest untouched.
 
     This is the «Сгенерировать» path in the Custom AWG tab. It deliberately does
@@ -1223,6 +1233,8 @@ def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress
         log(f"{LOG_PREFIX} custom: использую существующую личность Cloudflare.")
 
     endpoint = None
+    endpoint_limit = _attempts_limit(endpoint_attempts, PROBE_ENDPOINT_ATTEMPTS, 3)
+    sni_limit = _attempts_limit(sni_attempts, PROBE_ATTEMPTS, 4)
     endpoints = []
     if str(host or "").strip() and port:
         try:
@@ -1233,7 +1245,7 @@ def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress
         _progress(progress, "WARP: ищу точки входа", 0, 1)
         verified, scan_error = _collect_verified(nova_go_path, identity, log, progress, 1)
         verified.sort(key=lambda item: item["rtt_ms"])
-        endpoints = _durable_endpoints(diversify(verified))[:PROBE_ENDPOINT_ATTEMPTS]
+        endpoints = _durable_endpoints(diversify(verified))[:endpoint_limit]
         if not endpoints:
             endpoints = [{"host": FALLBACK_ENDPOINTS[0][0], "port": FALLBACK_ENDPOINTS[0][1],
                           "rtt_ms": 999}]
@@ -1269,8 +1281,8 @@ def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress
 
     text = ""
     attempts = 0
-    for candidate in endpoints[:PROBE_ENDPOINT_ATTEMPTS]:
-        for sni_value in pool[:PROBE_ATTEMPTS]:
+    for candidate in endpoints[:endpoint_limit]:
+        for sni_value in pool[:sni_limit]:
             try:
                 i1 = nova_quic_initial.build_i1(sni_value)
             except Exception as exc:
