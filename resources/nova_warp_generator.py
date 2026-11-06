@@ -27,6 +27,8 @@ __all__ = [
     "GROUP_CLOUDFLARE",
     "PROFILES_DIRNAME",
     "GENERATED_WARP_PREFIX",
+    "CUSTOM_GROUP",
+    "CUSTOM_WARP_PREFIX",
     "IDENTITY_FILENAME",
     "STATE_FILENAME",
     "TARGET_COUNT",
@@ -40,6 +42,7 @@ __all__ = [
     "diversify",
     "random_junk",
     "build_warp_conf",
+    "generate_custom_one",
     "should_reissue",
     "note_outcome",
     "load_state",
@@ -65,6 +68,8 @@ import nova_quic_initial
 PROFILES_DIRNAME = "profiles"
 GROUP_CLOUDFLARE = "AWG Cloudflare"
 GENERATED_WARP_PREFIX = "WARPgen_"
+CUSTOM_GROUP = "Custom"
+CUSTOM_WARP_PREFIX = "WARPgen_custom_"
 BUNDLED_WARP_PREFIX = "WARPv"
 IDENTITY_FILENAME = "warp_identity.json"
 STATE_FILENAME = "warp-generated-state.json"
@@ -305,7 +310,8 @@ def _endpoint_text(host, port) -> str:
     return f"{host}:{port}"
 
 
-def build_warp_conf(identity: dict, host: str, port: int, junk, i1: str = "") -> str:
+def build_warp_conf(identity: dict, host: str, port: int, junk, i1: str = "",
+                    dns: str = "", mtu: int = 1280, keepalive: int = 0) -> str:
     """One AmneziaWG config, byte-for-byte like Android's `WarpGeneratedStore.buildRawConfig`.
 
     `junk` is the `(Jc, Jmin, Jmax)` triple from `random_junk`. `i1` is an AmneziaWG `<b 0x…>`
@@ -314,15 +320,27 @@ def build_warp_conf(identity: dict, host: str, port: int, junk, i1: str = "") ->
     WireGuard values, not parameters: a WARP node speaks stock WireGuard and understands nothing
     else (§2.1). An IPv6 `host` is bracketed in the Endpoint line (wireproxy-awg and
     nova_profiles reject `2606:…:2408`).
+
+    `dns`, `mtu` and `keepalive` are optional knobs for the one-shot generator; the
+    five-argument call used by the 50-profile batch keeps the original Cloudflare defaults.
     """
     count, minimum, maximum = junk
     addresses = ", ".join(a for a in (identity.get("ipv4", ""), identity.get("ipv6", "")) if a)
+    dns_text = str(dns or "").strip() or "1.1.1.1, 1.0.0.1, 2606:4700:4700::1111, 2606:4700:4700::1001"
+    try:
+        mtu_value = max(576, min(1420, int(mtu or 1280)))
+    except (TypeError, ValueError):
+        mtu_value = 1280
+    try:
+        keepalive_value = max(0, min(3600, int(keepalive or 0)))
+    except (TypeError, ValueError):
+        keepalive_value = 0
     lines = [
         "[Interface]",
         f"PrivateKey = {identity['private_key']}",
         f"Address = {addresses}",
-        "DNS = 1.1.1.1, 1.0.0.1, 2606:4700:4700::1111, 2606:4700:4700::1001",
-        "MTU = 1280",
+        f"DNS = {dns_text}",
+        f"MTU = {mtu_value}",
         "S1 = 0",
         "S2 = 0",
         "S3 = 0",
@@ -335,6 +353,8 @@ def build_warp_conf(identity: dict, host: str, port: int, junk, i1: str = "") ->
         "H3 = 3",
         "H4 = 4",
     ]
+    if keepalive_value:
+        lines.append(f"PersistentKeepalive = {keepalive_value}")
     if i1:
         lines.append(f"I1 = {i1}")
     lines += [
@@ -1005,4 +1025,112 @@ def generate(base_dir, nova_go_path, *, log, force=False, api_proxy=None, progre
         "best_rtt_ms": best_rtt,
     })
     _progress(progress, f"WARP: {len(planned)} профилей, лучший {best_rtt} мс", len(planned), len(planned))
+    return summary
+
+
+def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress=None,
+                        host="", port=0, dns="", mtu=1280, keepalive=25, sni="", junk=None) -> dict:
+    """Create one WARP/AWG profile in `profiles/Custom` and leave the rest untouched.
+
+    This is the «Сгенерировать» path in the Custom AWG tab. It deliberately does
+    not reuse `generate()`: that function owns the `WARPgen_*` batch and prunes
+    stale members beyond its target. A one-shot custom profile must never delete
+    the batch or another custom file.
+
+    `host`/`port` select a manual endpoint; otherwise `nova-go warp scan` picks
+    the nearest verified one (with the public fallback list when the scan is
+    empty). The private key is generated and registered locally, exactly as in
+    the batch generator; no third-party web API ever sees it.
+    """
+    now = time.time()
+    summary = {"ok": False, "reason": "", "profile_id": "", "path": "", "endpoint": "",
+               "rtt_ms": None, "name": ""}
+
+    def fail(reason):
+        summary["reason"] = str(reason or "не удалось создать профиль")
+        log(f"{LOG_PREFIX} custom: {summary['reason']}")
+        return summary
+
+    _progress(progress, "WARP: готовлю личность", 0, 1)
+    identity, problem = _load_identity(base_dir)
+    if problem:
+        log(f"{LOG_PREFIX} custom: сохранённая личность непригодна ({problem}) — регистрирую заново.")
+    if not identity:
+        _progress(progress, "WARP: регистрирую устройство", 0, 1)
+        identity, reason = _issue_identity(base_dir, nova_go_path, api_proxy, log, now)
+        if not identity:
+            return fail(reason)
+    else:
+        log(f"{LOG_PREFIX} custom: использую существующую личность Cloudflare.")
+
+    endpoint = None
+    if str(host or "").strip() and port:
+        try:
+            endpoint = {"host": str(host).strip(), "port": int(port), "rtt_ms": 0}
+        except (TypeError, ValueError):
+            return fail("некорректный endpoint")
+    else:
+        _progress(progress, "WARP: ищу точки входа", 0, 1)
+        verified, scan_error = _collect_verified(nova_go_path, identity, log, progress, 1)
+        verified.sort(key=lambda item: item["rtt_ms"])
+        endpoints = diversify(verified)[:1]
+        if endpoints:
+            endpoint = endpoints[0]
+        else:
+            endpoint = {"host": FALLBACK_ENDPOINTS[0][0], "port": FALLBACK_ENDPOINTS[0][1],
+                        "rtt_ms": 999}
+            if scan_error is not None:
+                log(f"{LOG_PREFIX} custom: скан не удался ({_scan_error_reason(scan_error)}), "
+                    f"беру резервный {endpoint['host']}:{endpoint['port']}.")
+            else:
+                log(f"{LOG_PREFIX} custom: скан пуст, беру резервный "
+                    f"{endpoint['host']}:{endpoint['port']}.")
+
+    _progress(progress, "WARP: собираю профиль", 0, 1)
+    rng = random.Random()
+    try:
+        junk_value = tuple(int(v) for v in junk) if junk else random_junk(rng)
+        if len(junk_value) != 3:
+            raise ValueError
+    except (TypeError, ValueError):
+        return fail("некорректные параметры Jc/Jmin/Jmax")
+    sni_value = str(sni or "").strip() or nova_quic_initial.pick_sni(
+        rng.randrange(len(nova_quic_initial.WHITE_SNI)))
+    try:
+        i1 = nova_quic_initial.build_i1(sni_value) if sni_value else ""
+    except Exception as exc:
+        log(f"{LOG_PREFIX} custom: I1 не собран ({type(exc).__name__}) — профиль без прикрытия.")
+        i1 = ""
+    text = build_warp_conf(identity, endpoint["host"], endpoint["port"], junk_value, i1,
+                           dns=dns, mtu=mtu, keepalive=keepalive)
+
+    custom_dir = os.path.join(base_dir, PROFILES_DIRNAME, CUSTOM_GROUP)
+    try:
+        os.makedirs(custom_dir, exist_ok=True)
+        for index in range(1, 1000):
+            name = f"{CUSTOM_WARP_PREFIX}{index:02d}"
+            target = os.path.join(custom_dir, name + ".conf")
+            if not os.path.exists(target) and not os.path.exists(target + ".tmp"):
+                break
+        else:
+            return fail("слишком много custom-профилей WARP")
+        tmp = target + ".tmp"
+        with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+        _replace_with_retry(tmp, target)
+    except OSError as exc:
+        _remove_quietly([tmp] if "tmp" in locals() else [])
+        return fail(f"не удалось записать профиль: {_os_error_text(exc)}")
+
+    profile_id = f"{CUSTOM_GROUP}/{name}"
+    log(f"{LOG_PREFIX} custom: создан {profile_id} через {endpoint['host']}:{endpoint['port']}.")
+    summary.update({
+        "ok": True,
+        "profile_id": profile_id,
+        "path": target,
+        "endpoint": f"{endpoint['host']}:{endpoint['port']}",
+        "rtt_ms": endpoint.get("rtt_ms"),
+        "name": name,
+    })
+    _progress(progress, f"WARP: создан {name}", 1, 1)
     return summary

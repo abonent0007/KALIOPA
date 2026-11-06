@@ -6319,6 +6319,43 @@ try:
 
             return self._run("warp", _work, wait, "NovaWarpGenerate")
 
+        def generate_custom(self, wait=False):
+            """One locally generated WARP/AWG profile in Custom AWG, then select and connect."""
+            def _work():
+                nova_go = self._nova_go_path()
+                if not os.path.exists(nova_go):
+                    self.log_func("[WARP-ген] Custom: nova-go.exe не найден.")
+                    return False, "nova-go.exe не найден"
+                result = nova_warp_generator.generate_custom_one(
+                    get_base_dir(),
+                    nova_go,
+                    log=self.log_func,
+                    api_proxy=_api_proxies() or None,
+                    progress=self._progress("warp"),
+                )
+                if not result.get("ok"):
+                    return False, f"не удалось: {result.get('reason') or 'причина неизвестна'}"
+                profile_id = str(result.get("profile_id") or "")
+                name = str(result.get("name") or profile_id)
+                try:
+                    nova_profiles.save_selection(
+                        get_base_dir(),
+                        {"version": 1, "mode": nova_profiles.MODE_PROFILE,
+                         "group": nova_profiles.GROUP_CUSTOM, "profile": profile_id},
+                    )
+                except OSError as exc:
+                    self.log_func(f"[WARP-ген] Custom: выбор не сохранён ({type(exc).__name__}).")
+                wm = globals().get("warp_manager")
+                if wm is not None and _core_services_running():
+                    try:
+                        wm.apply_selection_now(f"Custom WARP: {name}")
+                    except Exception as exc:
+                        self.log_func(f"[WARP-ген] Custom: автоподключение не удалось ({type(exc).__name__}).")
+                endpoint = str(result.get("endpoint") or "")
+                return True, f"создан {name}" + (f" через {endpoint}" if endpoint else "")
+
+            return self._run("warp", _work, wait, "NovaCustomWarpGenerate")
+
         def issue_proton(self, force=False, wait=False, interactive=False):
             """`interactive`: the owner pressed the button, so a Proton CAPTCHA (Code 9001) opens a
             window for them to solve. Unattended runs never pop a window up or block on one."""
@@ -33401,6 +33438,9 @@ function FindProxyForURLEx(url, host) {{
 
             def generate_warp(self, force=False):
                 get_profile_jobs().generate_warp(force=bool(force))
+
+            def generate_custom(self):
+                get_profile_jobs().generate_custom()
 
             def issue_proton(self, force=False):
                 get_profile_jobs().issue_proton(force=bool(force), interactive=True)

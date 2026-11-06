@@ -100,6 +100,7 @@ ACTION_LABELS = {
     "sub_refresh": "Обновить сейчас",
     "sub_delete": "Удалить",
     "generate_warp": "Сгенерировать свои",
+    "generate_custom": "Сгенерировать",
     "issue_proton": "Выпустить профили",
     "register_masque": "Зарегистрировать",
     "reissue_warp": "Перевыпустить",
@@ -132,7 +133,7 @@ TAB_ACTION_ROWS = {
     GROUP_PROTON: (_MAIN_ROW,),
     GROUP_MASQUE: (_MAIN_ROW, ("delete",)),
     GROUP_VLESS: (_MAIN_ROW, ("import_file", "import_clipboard", "rename", "delete")),
-    GROUP_CUSTOM: (_MAIN_ROW, ("import_file", "import_clipboard", "rename", "delete")),
+    GROUP_CUSTOM: (_MAIN_ROW, ("generate_custom", "import_file", "import_clipboard", "rename", "delete")),
     TAB_SUBS: (("sub_add", "sub_interval", "sub_toggle", "sub_refresh", "sub_delete"),),
     TAB_TOR: (("tor_toggle", "tor_new_identity", "tor_refresh_bridges"),),
 }
@@ -2207,6 +2208,7 @@ class ProfilesWindow:
             "refresh_profiles": self._on_refresh_profiles,
             "folder": self._on_folder,
             "generate_warp": lambda: self._on_job("warp"),
+            "generate_custom": self._on_generate_custom,
             "issue_proton": lambda: self._on_job("proton"),
             "register_masque": lambda: self._on_job("masque"),
             "reissue_warp": lambda: self._on_job("warp", force=True),
@@ -2831,6 +2833,21 @@ class ProfilesWindow:
             self._notice(notice, "ok")
             self._render_job_line()
             self.refresh_now()
+
+    def _on_generate_custom(self):
+        """One WARP/AWG profile in Custom AWG, generated locally and activated."""
+        if not callable(getattr(self.ctx, "generate_custom", None)):
+            self._notice("Генератор Custom WARP недоступен в этой сборке", "warn")
+            return
+        jobs = self._snapshot.get("jobs") or {}
+        if (jobs.get("warp") or {}).get("running"):
+            self._notice("Генерация WARP уже идёт — дождись её окончания", "muted")
+            return
+        if not self._call_ctx("generate_custom", error_prefix="Генерация Custom WARP не запустилась"):
+            return
+        self._job_started["warp"] = time.time()
+        self._notice("Генерация Custom WARP запущена: профиль появится в Custom AWG и подключится", "ok")
+        self.refresh_now()
 
     def _on_delete(self):
         record = self._selected_record()
