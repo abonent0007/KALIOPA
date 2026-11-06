@@ -54,6 +54,8 @@ import json
 import os
 import random
 import re
+import shutil
+import socket
 import subprocess
 import tempfile
 import threading
@@ -94,6 +96,25 @@ ENOUGH_VERIFIED = 24
 MAX_PER_SUBNET = 3
 MAX_DESIRABLE_RTT_MS = 1500
 REGISTER_TIMEOUT_SEC = 60
+
+# Проверка готового профиля перед записью. Свой I1 иногда не проходит: часть
+# случайных QUIC-прикрытий DPI дропает вместе с рукопожатием (замер 2026-11-06:
+# WARPgen_15 работает, а Custom-профили с тем же ключом и endpoint — нет; g15 с
+# их I1 падает, g15 с I1 от yastatic.net — работает). Поэтому профиль проверяется
+# настоящим HTTP-запросом через временный wireproxy-awg на свободном порту, а I1
+# пересобирается с другим SNI до PROBE_ATTEMPTS раз на каждую точку входа.
+PROBE_ATTEMPTS = 3
+PROBE_ENDPOINT_ATTEMPTS = 2
+PROBE_BOOT_SEC = 4.0
+PROBE_HTTP_TIMEOUT_SEC = 9.0
+# Cloudflare's WARP ingress answers a WireGuard handshake on almost any UDP port, so the
+# scanner reports addresses like 188.114.97.255:955 as «verified» — and the data plane
+# there dies within seconds (measured 2026-11-06: such a profile connected, carried one
+# request, then went silent while 162.159.192.1:4500 stayed up). Only these ports are
+# treated as durable; a scanned host with an exotic port keeps the host, not the port.
+STANDARD_WARP_PORTS = (2408, 500, 4500, 1701, 890, 809, 3138)
+DEFAULT_WARP_PORT = 2408
+PROBE_SETTLE_SEC = 2.0
 # Extra wall-clock budget over the tool's own timeout before we give up on the process.
 _SUBPROCESS_MARGIN_SEC = 20
 
@@ -286,6 +307,35 @@ def diversify(endpoints: list[dict], max_per_subnet: int = MAX_PER_SUBNET) -> li
         else:
             tail.append(endpoint)
     return head + tail
+
+
+def _durable_endpoints(endpoints: list[dict]) -> list[dict]:
+    """Keep the host, drop an exotic port for a standard WARP one.
+
+    The scanner verifies a handshake, and Cloudflare completes it on almost any UDP port;
+    the data plane, however, only stays up on the standard ports (PROBE_ATTEMPTS note). A
+    profile written on `188.114.97.255:955` connected for seven seconds and died, while the
+    same key on `162.159.192.1:4500` carried traffic — so a scanned host with a port outside
+    STANDARD_WARP_PORTS is rewritten to DEFAULT_WARP_PORT and deduplicated.
+    """
+    out: list[dict] = []
+    seen = set()
+    for item in endpoints or []:
+        try:
+            host = str(item.get("host") or "").strip()
+            port = int(item.get("port") or 0)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if not host or not port:
+            continue
+        if port not in STANDARD_WARP_PORTS:
+            port = DEFAULT_WARP_PORT
+        key = (host, port)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"host": host, "port": port, "rtt_ms": item.get("rtt_ms")})
+    return out
 
 
 # --- junk & config assembly (and-warpgen §2) ----------------------------------
@@ -1028,8 +1078,110 @@ def generate(base_dir, nova_go_path, *, log, force=False, api_proxy=None, progre
     return summary
 
 
+def _free_loopback_port() -> int:
+    """An ephemeral port for the throwaway probe instance."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _socks5_fetch_204(port: int, timeout: float = PROBE_HTTP_TIMEOUT_SEC) -> bool:
+    """True when a plain HTTP GET through the probe's SOCKS5 returns 204.
+
+    Raw sockets rather than curl: the generator runs inside Nova's worker thread and
+    must not depend on an external binary. `www.gstatic.com/generate_204` over port 80
+    is answered with 204 by Google's edge and needs no TLS, so a successful response
+    proves the tunnel carries payload both ways.
+    """
+    host = b"www.gstatic.com"
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            sock.sendall(b"\x05\x01\x00")
+            if sock.recv(2) != b"\x05\x00":
+                return False
+            sock.sendall(b"\x05\x01\x00\x03" + bytes([len(host)]) + host + b"\x00\x50")
+            reply = sock.recv(4)
+            if len(reply) < 4 or reply[1] != 0:
+                return False
+            atyp = reply[3]
+            if atyp == 1:
+                sock.recv(4)
+            elif atyp == 3:
+                length = sock.recv(1)
+                if length:
+                    sock.recv(length[0])
+            elif atyp == 4:
+                sock.recv(16)
+            sock.recv(2)
+            sock.sendall(b"GET /generate_204 HTTP/1.1\r\nHost: www.gstatic.com\r\n"
+                         b"Connection: close\r\n\r\n")
+            status = sock.recv(64)
+            return status.startswith(b"HTTP/1.") and b" 204" in status[:24]
+    except OSError:
+        return False
+
+
+def _probe_config(text: str, base_dir: str, wireproxy_path: str,
+                  timeout: float = PROBE_HTTP_TIMEOUT_SEC) -> bool:
+    """Start a throwaway wireproxy-awg on `text` and check that traffic passes.
+
+    The probe never touches the live tunnel: its config is a copy with a SOCKS5
+    listener on an ephemeral loopback port, so the primary and the reserve slot stay
+    as they are. This is the same helper `nova_profiles_ui`'s «Проверить» uses, just
+    without the health endpoint (`-i`) — that one is a fixed port and would collide
+    with a running Nova. A missing helper means "cannot check", not "broken": the
+    caller then writes the profile unverified instead of failing the whole action.
+    """
+    helper = str(wireproxy_path or "").strip()
+    if not helper or not os.path.exists(helper):
+        return True
+    port = _free_loopback_port()
+    workdir = tempfile.mkdtemp(prefix="nova-warp-probe-")
+    cfg_path = os.path.join(workdir, "probe.conf")
+    proc = None
+    try:
+        payload = text.rstrip("\n") + f"\n\n[Socks5]\nBindAddress = 127.0.0.1:{port}\n"
+        with open(cfg_path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(payload)
+        proc = subprocess.Popen(
+            [helper, "-c", cfg_path],
+            cwd=base_dir if os.path.isdir(base_dir) else None,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            creationflags=_CREATE_NO_WINDOW,
+        )
+        deadline = time.time() + PROBE_BOOT_SEC
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                return False
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.4):
+                    return _socks5_fetch_204(port, timeout=timeout)
+            except OSError:
+                time.sleep(0.2)
+        return False
+    except OSError:
+        return False
+    finally:
+        if proc is not None:
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=2)
+            except OSError:
+                pass
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
 def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress=None,
-                        host="", port=0, dns="", mtu=1280, keepalive=25, sni="", junk=None) -> dict:
+                        host="", port=0, dns="", mtu=1280, keepalive=25, sni="", junk=None,
+                        wireproxy_path="", probe=True) -> dict:
     """Create one WARP/AWG profile in `profiles/Custom` and leave the rest untouched.
 
     This is the «Сгенерировать» path in the Custom AWG tab. It deliberately does
@@ -1038,9 +1190,16 @@ def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress
     the batch or another custom file.
 
     `host`/`port` select a manual endpoint; otherwise `nova-go warp scan` picks
-    the nearest verified one (with the public fallback list when the scan is
+    the nearest verified ones (with the public fallback list when the scan is
     empty). The private key is generated and registered locally, exactly as in
     the batch generator; no third-party web API ever sees it.
+
+    A built config is not written until it carries traffic: `_probe_config` runs a
+    throwaway wireproxy-awg on an ephemeral port and fetches a 204 through it. The
+    first I1 is often dropped by the DPI together with the handshake, so the junk
+    header is rebuilt with another SNI (and, if needed, the next endpoint) before
+    the generator gives up. `probe=False` skips the check; `wireproxy_path`
+    defaults to the helper next to nova-go.
     """
     now = time.time()
     summary = {"ok": False, "reason": "", "profile_id": "", "path": "", "endpoint": "",
@@ -1064,29 +1223,27 @@ def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress
         log(f"{LOG_PREFIX} custom: использую существующую личность Cloudflare.")
 
     endpoint = None
+    endpoints = []
     if str(host or "").strip() and port:
         try:
-            endpoint = {"host": str(host).strip(), "port": int(port), "rtt_ms": 0}
+            endpoints = [{"host": str(host).strip(), "port": int(port), "rtt_ms": 0}]
         except (TypeError, ValueError):
             return fail("некорректный endpoint")
     else:
         _progress(progress, "WARP: ищу точки входа", 0, 1)
         verified, scan_error = _collect_verified(nova_go_path, identity, log, progress, 1)
         verified.sort(key=lambda item: item["rtt_ms"])
-        endpoints = diversify(verified)[:1]
-        if endpoints:
-            endpoint = endpoints[0]
-        else:
-            endpoint = {"host": FALLBACK_ENDPOINTS[0][0], "port": FALLBACK_ENDPOINTS[0][1],
-                        "rtt_ms": 999}
+        endpoints = _durable_endpoints(diversify(verified))[:PROBE_ENDPOINT_ATTEMPTS]
+        if not endpoints:
+            endpoints = [{"host": FALLBACK_ENDPOINTS[0][0], "port": FALLBACK_ENDPOINTS[0][1],
+                          "rtt_ms": 999}]
             if scan_error is not None:
                 log(f"{LOG_PREFIX} custom: скан не удался ({_scan_error_reason(scan_error)}), "
-                    f"беру резервный {endpoint['host']}:{endpoint['port']}.")
+                    f"беру резервный {endpoints[0]['host']}:{endpoints[0]['port']}.")
             else:
                 log(f"{LOG_PREFIX} custom: скан пуст, беру резервный "
-                    f"{endpoint['host']}:{endpoint['port']}.")
+                    f"{endpoints[0]['host']}:{endpoints[0]['port']}.")
 
-    _progress(progress, "WARP: собираю профиль", 0, 1)
     rng = random.Random()
     try:
         junk_value = tuple(int(v) for v in junk) if junk else random_junk(rng)
@@ -1094,15 +1251,62 @@ def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress
             raise ValueError
     except (TypeError, ValueError):
         return fail("некорректные параметры Jc/Jmin/Jmax")
-    sni_value = str(sni or "").strip() or nova_quic_initial.pick_sni(
-        rng.randrange(len(nova_quic_initial.WHITE_SNI)))
-    try:
-        i1 = nova_quic_initial.build_i1(sni_value) if sni_value else ""
-    except Exception as exc:
-        log(f"{LOG_PREFIX} custom: I1 не собран ({type(exc).__name__}) — профиль без прикрытия.")
-        i1 = ""
-    text = build_warp_conf(identity, endpoint["host"], endpoint["port"], junk_value, i1,
-                           dns=dns, mtu=mtu, keepalive=keepalive)
+
+    # Порядок SNI: заданный вручную, затем случайный, затем остальные проверенные
+    # имена. Прикрытие без I1 не работает вовсе, поэтому пустой I1 не пишем.
+    pool = [str(sni or "").strip()] if str(sni or "").strip() else []
+    pool.append(nova_quic_initial.pick_sni(rng.randrange(len(nova_quic_initial.WHITE_SNI))))
+    spare = [name for name in nova_quic_initial.WHITE_SNI[:14] if name not in pool]
+    rng.shuffle(spare)
+    pool.extend(spare)
+
+    helper = str(wireproxy_path or "").strip()
+    if not helper:
+        helper = os.path.join(os.path.dirname(str(nova_go_path)), "wireproxy-awg.exe")
+    if not os.path.exists(helper):
+        helper = ""
+    verify = bool(probe) and bool(helper)
+
+    text = ""
+    attempts = 0
+    for candidate in endpoints[:PROBE_ENDPOINT_ATTEMPTS]:
+        for sni_value in pool[:PROBE_ATTEMPTS]:
+            try:
+                i1 = nova_quic_initial.build_i1(sni_value)
+            except Exception as exc:
+                log(f"{LOG_PREFIX} custom: I1 не собран для {sni_value} ({type(exc).__name__}).")
+                continue
+            attempts += 1
+            if verify:
+                _progress(progress, f"WARP: проверяю {candidate['host']}:{candidate['port']} "
+                                    f"({attempts})", 0, 1)
+            candidate_text = build_warp_conf(identity, candidate["host"], candidate["port"],
+                                             junk_value, i1, dns=dns, mtu=mtu,
+                                             keepalive=keepalive)
+            if verify:
+                passed = _probe_config(candidate_text, base_dir, helper)
+                if passed:
+                    # One pass is not enough: a session that answers a request and dies a few
+                    # seconds later must not become the profile (see STANDARD_WARP_PORTS).
+                    time.sleep(PROBE_SETTLE_SEC)
+                    passed = _probe_config(candidate_text, base_dir, helper)
+                if passed:
+                    endpoint, text = candidate, candidate_text
+                    break
+            else:
+                endpoint, text = candidate, candidate_text
+                break
+            log(f"{LOG_PREFIX} custom: {candidate['host']}:{candidate['port']} с I1 "
+                f"{sni_value} не прошёл проверку — пробую другое прикрытие.")
+        if text:
+            break
+    if not text:
+        if attempts:
+            return fail("ни одна комбинация точки входа и прикрытия не прошла проверку — "
+                        "попробуй ещё раз (сеть WARP нестабильна)")
+        return fail("не удалось собрать I1 ни для одного имени прикрытия")
+    if not verify:
+        log(f"{LOG_PREFIX} custom: wireproxy-awg не найден — профиль записан без проверки.")
 
     custom_dir = os.path.join(base_dir, PROFILES_DIRNAME, CUSTOM_GROUP)
     try:
@@ -1123,7 +1327,8 @@ def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress
         return fail(f"не удалось записать профиль: {_os_error_text(exc)}")
 
     profile_id = f"{CUSTOM_GROUP}/{name}"
-    log(f"{LOG_PREFIX} custom: создан {profile_id} через {endpoint['host']}:{endpoint['port']}.")
+    log(f"{LOG_PREFIX} custom: создан {profile_id} через {endpoint['host']}:{endpoint['port']}"
+        + (f" (проверен за {attempts} попыт.)" if verify else "") + ".")
     summary.update({
         "ok": True,
         "profile_id": profile_id,
@@ -1131,6 +1336,8 @@ def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress
         "endpoint": f"{endpoint['host']}:{endpoint['port']}",
         "rtt_ms": endpoint.get("rtt_ms"),
         "name": name,
+        "probed": verify,
+        "attempts": attempts,
     })
     _progress(progress, f"WARP: создан {name}", 1, 1)
     return summary

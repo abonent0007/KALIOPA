@@ -90,5 +90,79 @@ class GenerateCustomTests(unittest.TestCase):
         self.assertEqual("keep", (batch / "WARPgen_01.conf").read_text(encoding="utf-8"))
 
 
+class ProbeTests(unittest.TestCase):
+    """A profile is written only after a temporary wireproxy carries traffic through it."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix="kaliopa-custom-probe-")
+        self.helper = pathlib.Path(self.base) / "wireproxy-awg.exe"
+        self.helper.write_bytes(b"stub")
+
+    def generate(self, probe_mock, **kwargs):
+        with mock.patch.object(gen, "_load_identity", return_value=(IDENTITY, "")), \
+             mock.patch.object(gen, "_collect_verified",
+                               return_value=([{"host": "162.159.192.1", "port": 2408,
+                                               "rtt_ms": 42}], None)), \
+             mock.patch.object(gen.nova_quic_initial, "pick_sni", return_value="www.example.com"), \
+             mock.patch.object(gen.nova_quic_initial, "build_i1", return_value="I1-TEST"), \
+             mock.patch.object(gen, "_probe_config", probe_mock):
+            return gen.generate_custom_one(self.base, "nova-go.exe", log=lambda _m: None,
+                                           wireproxy_path=str(self.helper), **kwargs)
+
+    def profile_path(self):
+        return pathlib.Path(self.base) / "profiles" / "Custom" / "WARPgen_custom_01.conf"
+
+    def test_a_failed_probe_rebuilds_the_junk_and_retries(self):
+        with mock.patch.object(gen, "_probe_config", side_effect=[False, True, True]) as probe:
+            result = self.generate(probe)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(3, probe.call_count)
+        self.assertEqual(2, result["attempts"])
+        self.assertTrue(result["probed"])
+        self.assertTrue(self.profile_path().is_file())
+
+    def test_a_flapping_endpoint_is_rejected(self):
+        # First candidate answers once and dies on the repeat; the next one passes twice.
+        with mock.patch.object(gen, "_probe_config",
+                               side_effect=[True, False, True, True]) as probe:
+            result = self.generate(probe)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(4, probe.call_count)
+        self.assertEqual(2, result["attempts"])
+
+    def test_all_probes_failing_writes_nothing(self):
+        with mock.patch.object(gen, "_probe_config", return_value=False) as probe:
+            result = self.generate(probe)
+        self.assertFalse(result["ok"], result)
+        self.assertIn("не прошла проверку", result["reason"])
+        self.assertFalse(self.profile_path().exists())
+        self.assertEqual(gen.PROBE_ATTEMPTS, probe.call_count)
+
+    def test_probe_disabled_writes_without_checking(self):
+        guard = mock.Mock(side_effect=AssertionError("no probe"))
+        result = self.generate(guard, probe=False)
+        self.assertTrue(result["ok"], result)
+        self.assertFalse(result["probed"])
+        self.assertFalse(guard.called)
+
+
+class DurableEndpointTests(unittest.TestCase):
+    def test_an_exotic_scan_port_becomes_the_standard_one(self):
+        got = gen._durable_endpoints([{"host": "188.114.97.255", "port": 955, "rtt_ms": 30}])
+        self.assertEqual([{"host": "188.114.97.255", "port": gen.DEFAULT_WARP_PORT, "rtt_ms": 30}], got)
+
+    def test_a_standard_port_is_kept_and_duplicates_dropped(self):
+        got = gen._durable_endpoints([
+            {"host": "162.159.192.1", "port": 4500, "rtt_ms": 10},
+            {"host": "162.159.192.1", "port": 4500, "rtt_ms": 20},
+            {"host": "162.159.192.2", "port": 2408, "rtt_ms": 25},
+        ])
+        self.assertEqual([("162.159.192.1", 4500), ("162.159.192.2", 2408)],
+                         [(item["host"], item["port"]) for item in got])
+
+    def test_a_broken_item_is_skipped(self):
+        self.assertEqual([], gen._durable_endpoints([{"host": "", "port": 2408}, {}, "junk"]))
+
+
 if __name__ == "__main__":
     unittest.main()
