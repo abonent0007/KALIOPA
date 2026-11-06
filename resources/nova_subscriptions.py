@@ -35,6 +35,7 @@ from urllib.parse import quote, urlsplit
 import requests
 
 import nova_profiles
+import nova_subscription_meta as submeta
 
 try:
     import nova_vless
@@ -168,6 +169,23 @@ def _as_float(value, default):
         return default
 
 
+def _clean_stats(value):
+    """The counters `nova_vless.parse_many` returns, kept for the window.
+
+    `other_scheme` is the reason a list can answer with 4000 links and import
+    zero nodes; storing the number lets the row say so instead of leaving the
+    owner with "нет vless://" and no explanation.
+    """
+    if not isinstance(value, dict):
+        return {}
+    out = {}
+    for key in ("total", "vless", "other_scheme", "bad", "duplicate", "truncated", "xray_json"):
+        number = max(0, _as_int(value.get(key), 0))
+        if number:
+            out[key] = number
+    return out
+
+
 def make_id(url):
     """A stable id for a URL: readable in the file, and the same across restarts.
 
@@ -232,6 +250,11 @@ def normalize_record(record):
         "last_status": str(record.get("last_status") or ""),
         "fail_streak": max(0, _as_int(record.get("fail_streak"), 0)),
         "node_count": max(0, _as_int(record.get("node_count"), 0)),
+        # Metadata from `Subscription-Userinfo` / `Profile-*`. Optional: a registry
+        # written before this shape still loads, and an older Nova that reads a
+        # newer file simply drops the field (both directions stay usable).
+        "provider": submeta.sanitize_provider(record.get("provider")),
+        "last_stats": _clean_stats(record.get("last_stats")),
         # The nodes this subscription brought last time. Only these may be taken away by a refresh
         # (rule 2 of plan_sync), so this list is the whole reason the file is state, not a cache.
         "identities": identities[:MAX_NODES],
@@ -467,10 +490,11 @@ def mirror_urls(url):
 class FetchResult(object):
     """`status` is "ok" | "not_modified" | "failed"; everything else is filled per status."""
 
-    __slots__ = ("status", "body", "etag", "last_modified", "message", "via", "url", "bytes")
+    __slots__ = ("status", "body", "etag", "last_modified", "message", "via", "url", "bytes",
+                 "headers")
 
     def __init__(self, status, body=b"", etag="", last_modified="", message="", via="", url="",
-                 size=0):
+                 size=0, headers=None):
         self.status = status
         self.body = body
         self.etag = etag
@@ -479,6 +503,9 @@ class FetchResult(object):
         self.via = via
         self.url = url
         self.bytes = size
+        # Metadata travels in headers (`Subscription-Userinfo`, `Profile-*`) and a
+        # 304 can carry a fresh traffic counter even though the body did not change.
+        self.headers = dict(headers or {})
 
     def __repr__(self):
         return "FetchResult(%s, %d bytes, via %s)" % (self.status, self.bytes, self.via or "direct")
@@ -545,7 +572,7 @@ def fetch(url, etag="", last_modified="", proxies=(), direct=True, user_agent=DE
                 with response:
                     if response.status_code == 304:
                         return FetchResult("not_modified", etag=etag, last_modified=last_modified,
-                                           via=label, url=name)
+                                           via=label, url=name, headers=response.headers)
                     if response.status_code != 200:
                         last_message = "HTTP %d" % response.status_code
                         continue
@@ -560,7 +587,8 @@ def fetch(url, etag="", last_modified="", proxies=(), direct=True, user_agent=DE
                 return FetchResult("ok", body=body,
                                    etag=response.headers.get("ETag", "") or "",
                                    last_modified=response.headers.get("Last-Modified", "") or "",
-                                   via=label, url=name, size=len(body))
+                                   via=label, url=name, size=len(body),
+                                   headers=response.headers)
         finally:
             session.close()
     return FetchResult("failed", message=last_message, url=url)
@@ -634,6 +662,20 @@ def plan_sync(existing, fresh_identities, previous_identities, keep, pinned=()):
     return {"remove": remove, "add": add, "keep": kept}
 
 
+def _absorb_metadata(record, result, now):
+    """Merge `Subscription-Userinfo` / `Profile-*` from a response into the record.
+
+    Headers win over the same field repeated at the top of the body: the header
+    is what the panel computed for this request, the body line may be a stale
+    template. A 304 has no body but can still carry a fresh traffic counter, so
+    this runs for both `ok` and `not_modified`.
+    """
+    meta = submeta.parse_body_metadata(result.body) if result.status == "ok" else {}
+    meta = submeta.merge_provider(meta, submeta.parse_headers(getattr(result, "headers", {})))
+    if meta:
+        record["provider"] = submeta.merge_provider(record.get("provider"), meta, now=now)
+
+
 def refresh(base_dir, record, *, proxies=(), direct=True, log=None, fetcher=None, now=None):
     """Download one subscription and apply it to `profiles/`.
 
@@ -662,24 +704,34 @@ def refresh(base_dir, record, *, proxies=(), direct=True, log=None, fetcher=None
         record["fail_streak"] = 0
         record["last_status"] = "не менялась"
         record["last_ok_at"] = now
+        _absorb_metadata(record, result, now)
         say("[Подписки] «%s» не менялась (304), профилей: %d." % (title, record["node_count"]))
         return "unchanged", record, {}
 
     record["etag"] = result.etag
     record["last_modified"] = result.last_modified
     record["fail_streak"] = 0
+    _absorb_metadata(record, result, now)
 
     nodes, stats = ([], {})
     if nova_vless is not None and record["kind"] in (KIND_AUTO, KIND_VLESS):
         nodes, stats = nova_vless.parse_many(result.body, limit=MAX_NODES)
+    record["last_stats"] = _clean_stats(stats)
 
     if nodes:
         outcome = _apply_vless(base_dir, record, nodes, say, title)
         return outcome, record, stats
 
     if record["kind"] == KIND_VLESS:
-        record["last_status"] = "в ответе нет ссылок vless://"
-        say("[Подписки] «%s»: в ответе нет ссылок vless:// (%d КБ)." % (title, result.bytes // 1024))
+        skipped = max(0, _as_int(stats.get("other_scheme"), 0))
+        if skipped:
+            record["last_status"] = "нет vless://; пропущено %d чужих ссылок" % skipped
+            say("[Подписки] «%s»: нет vless://, пропущено %d ссылок других протоколов (%d КБ)." %
+                (title, skipped, result.bytes // 1024))
+        else:
+            record["last_status"] = "в ответе нет ссылок vless://"
+            say("[Подписки] «%s»: в ответе нет ссылок vless:// (%d КБ)." %
+                (title, result.bytes // 1024))
         return "empty", record, stats
 
     # Not VLESS: hand the body to the ordinary importer, which reads wg-quick blocks, Amnezia

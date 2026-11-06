@@ -526,6 +526,72 @@ def _subs_kind_word(kind):
     return {"vless": "VLESS", "awg": "AWG"}.get(str(kind or "").lower(), "авто")
 
 
+def _format_volume(value):
+    """Bytes -> a short human volume, Russian units and a decimal comma."""
+    try:
+        number = max(0, int(value))
+    except (TypeError, ValueError):
+        return ""
+    for unit, size in (("ТБ", 1024 ** 4), ("ГБ", 1024 ** 3), ("МБ", 1024 ** 2), ("КБ", 1024)):
+        if number >= size:
+            amount = number / float(size)
+            if amount >= 10 or float(amount).is_integer():
+                return "%.0f %s" % (amount, unit)
+            return ("%.1f" % amount).replace(".", ",") + " " + unit
+    return "%d Б" % number
+
+
+def _format_expiry(stamp, now):
+    try:
+        stamp = int(stamp)
+    except (TypeError, ValueError):
+        return ""
+    if stamp <= 0:
+        return ""
+    try:
+        date = time.strftime("%d.%m.%Y", time.localtime(stamp))
+    except (OSError, OverflowError, ValueError):
+        return ""
+    return ("истёк " if stamp <= now else "до ") + date
+
+
+def _provider_parts(provider, now):
+    """Provider traffic/expiry -> (parts, limited). Missing fields say nothing."""
+    info = provider.get("userinfo") if isinstance(provider, dict) else None
+    if not isinstance(info, dict):
+        return [], False
+    parts = []
+    limited = False
+    if "total" in info:
+        try:
+            total = max(0, int(info.get("total") or 0))
+        except (TypeError, ValueError):
+            total = 0
+        if total == 0:
+            parts.append("безлимит")
+        elif "upload" in info or "download" in info:
+            try:
+                used = max(0, int(info.get("upload") or 0)) + max(0, int(info.get("download") or 0))
+            except (TypeError, ValueError):
+                used = 0
+            left = max(0, total - used)
+            if left <= 0:
+                parts.append("трафик исчерпан")
+                limited = True
+            else:
+                parts.append("осталось %s из %s" % (_format_volume(left), _format_volume(total)))
+        else:
+            parts.append("лимит %s" % _format_volume(total))
+    expiry = _format_expiry(info.get("expire"), now)
+    if expiry:
+        parts.append(expiry)
+        try:
+            limited = limited or int(info.get("expire") or 0) <= now
+        except (TypeError, ValueError):
+            pass
+    return parts, limited
+
+
 def format_subscription_row(record, now=None, pad="   ", refreshing=False):
     """One row of the «Подписки» tab -> (text, tone).
 
@@ -535,13 +601,15 @@ def format_subscription_row(record, now=None, pad="   ", refreshing=False):
     goes — host and file — and the whole link is one «Период…» away for anyone who needs it.
     """
     entry = record if isinstance(record, dict) else {}
+    provider = entry.get("provider") if isinstance(entry.get("provider"), dict) else {}
     name = str(entry.get("name") or "").strip()
     url = str(entry.get("url") or "")
     host, _sep, tail = url.partition("://")[2].partition("/")
-    title = name or host or str(entry.get("id") or "подписка")
+    title = name or str(provider.get("title") or "").strip() or host or str(entry.get("id") or "подписка")
     enabled = bool(entry.get("enabled", True))
     interval = _as_hours(entry.get("interval_hours"))
     count = max(0, int(_num(entry.get("node_count"))))
+    now = time.time() if now is None else float(now)
     parts = [title, host or "?"]
     if not enabled:
         parts.append("выключена")
@@ -549,9 +617,17 @@ def format_subscription_row(record, now=None, pad="   ", refreshing=False):
         parts.append(f"каждые {interval} ч")
     parts.append(f"{count} {_plural(count, 'профиль', 'профиля', 'профилей')}")
     parts.append(_subs_kind_word(entry.get("kind")))
+    traffic, limited = _provider_parts(provider, now)
+    parts.extend(traffic)
+    stats = entry.get("last_stats") if isinstance(entry.get("last_stats"), dict) else {}
+    skipped = max(0, int(_num(stats.get("other_scheme"))))
+    if skipped and count:
+        # When count is zero, `last_status` already says how many foreign links
+        # were skipped; repeating the number would make the row noisy.
+        parts.append(f"чужих ссылок: {skipped}")
     if refreshing:
         parts.append("обновляется…")
-        tone = "warn"
+        tone = "fail" if limited else "warn"
     else:
         status = str(entry.get("last_status") or "").strip()
         when = _age_text(entry.get("last_checked_at"), now)
@@ -562,7 +638,7 @@ def format_subscription_row(record, now=None, pad="   ", refreshing=False):
         else:
             parts.append("ещё не загружалась")
         streak = int(_num(entry.get("fail_streak")))
-        tone = "fail" if streak else ("muted" if not enabled else "normal")
+        tone = "fail" if (streak or limited) else ("muted" if not enabled else "normal")
     return pad + "  ·  ".join(str(p) for p in parts if str(p)), tone
 
 
@@ -578,7 +654,7 @@ def format_subs_header(records, loaded=True):
         return "Загрузка подписок…"
     total = len(records or [])
     if not total:
-        return "Подписок нет — «Добавить…» и вставьте ссылку на список VLESS или AWG"
+        return "Подписок нет — «Добавить…» и вставьте ссылку на список VLESS, Xray-JSON или AWG"
     on = sum(1 for r in records if r.get("enabled", True))
     nodes = sum(max(0, int(_num(r.get("node_count")))) for r in records)
     text = f"Подписки: {total}, включено {on}"
@@ -2254,8 +2330,8 @@ class ProfilesWindow:
         """
         url = self._ask_string("Новая подписка",
                                "Ссылка на подписку (http/https).\n\nПодойдёт список vless://, "
-                               "конфиги WireGuard/AmneziaWG или ссылка панели — Nova сама "
-                               "разберёт содержимое.")
+                               "raw- или JSON-подписка Xray/3x-ui, конфиги "
+                               "WireGuard/AmneziaWG — Nova сама разберёт содержимое.")
         if not url:
             return
         url = url.strip()

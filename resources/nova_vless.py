@@ -34,7 +34,7 @@ from urllib.parse import quote, unquote
 
 __all__ = [
     "SCHEME", "NETWORKS", "SECURITIES",
-    "VlessNode", "parse_uri", "parse_singbox_text", "parse_many",
+    "VlessNode", "parse_uri", "parse_singbox_text", "parse_many", "parse_xray_json",
     "validate", "build_xray_config", "decode_subscription_body", "safe_profile_name",
 ]
 
@@ -544,6 +544,304 @@ def parse_singbox_text(raw):
     return nodes
 
 
+def _xray_first(mapping, *keys, default=""):
+    if not isinstance(mapping, dict):
+        return default
+    for key in keys:
+        value = mapping.get(key)
+        if value not in (None, "", [], {}):
+            return value
+    return default
+
+
+def _xray_list(value):
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return []
+
+
+def _xray_host(value):
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (list, tuple)) and value:
+        return str(value[0]).strip()
+    if isinstance(value, dict):
+        for key in ("Host", "host"):
+            if key in value:
+                return _xray_host(value[key])
+    return ""
+
+
+def _xray_tls_fields(stream):
+    """`streamSettings` -> the TLS/REALITY fields Nova's model understands."""
+    tls = stream.get("tlsSettings") if isinstance(stream.get("tlsSettings"), dict) else {}
+    reality = stream.get("realitySettings") if isinstance(stream.get("realitySettings"), dict) else {}
+    tls_inner = tls.get("settings") if isinstance(tls.get("settings"), dict) else {}
+    reality_inner = reality.get("settings") if isinstance(reality.get("settings"), dict) else {}
+    security = str(stream.get("security") or "").strip().lower()
+    if reality:
+        security = "reality"
+    elif tls and security not in ("reality",):
+        security = "tls"
+    if security not in SECURITIES:
+        security = "none"
+
+    if security == "reality":
+        source, inner = reality, reality_inner
+        fallback, fallback_inner = tls, tls_inner
+    else:
+        source, inner = tls, tls_inner
+        fallback, fallback_inner = {}, {}
+
+    def pick(*keys):
+        value = _xray_first(source, *keys)
+        if value in (None, "", [], {}):
+            value = _xray_first(inner, *keys)
+        if value in (None, "", [], {}):
+            value = _xray_first(fallback, *keys)
+        if value in (None, "", [], {}):
+            value = _xray_first(fallback_inner, *keys)
+        return value
+
+    sni = pick("serverName", "serverNames")
+    if isinstance(sni, (list, tuple)):
+        sni = sni[0] if sni else ""
+    short_id = pick("shortId", "shortIds")
+    if isinstance(short_id, (list, tuple)):
+        short_id = short_id[0] if short_id else ""
+    return {
+        "security": security,
+        "sni": str(sni or "").strip(),
+        "alpn": _xray_list(pick("alpn")),
+        "fingerprint": str(pick("fingerprint") or "").strip(),
+        "allow_insecure": bool(pick("allowInsecure")),
+        "reality_public_key": str(pick("publicKey") or "").strip(),
+        "reality_short_id": str(short_id or "").strip(),
+        "reality_spider_x": str(pick("spiderX") or "").strip(),
+        "mldsa65_verify": str(pick("mldsa65Verify") or "").strip(),
+        "ech": str(pick("echConfigList") or "").strip(),
+        "cs": str(pick("cipherSuites") or "").strip(),
+        "pcs": pick("pinnedPeerCertSha256"),
+        "vcn": str(pick("verifyPeerCertByName") or "").strip(),
+    }
+
+
+def _xray_transport_fields(stream):
+    """`streamSettings` -> (network, path, host, service, mode, headerType, extra)."""
+    network_raw = str(stream.get("network") or "").strip().lower()
+    if not network_raw:
+        for candidate in ("wsSettings", "grpcSettings", "xhttpSettings",
+                          "httpupgradeSettings", "kcpSettings", "rawSettings", "tcpSettings"):
+            if isinstance(stream.get(candidate), dict):
+                network_raw = {
+                    "wsSettings": "ws", "grpcSettings": "grpc", "xhttpSettings": "xhttp",
+                    "httpupgradeSettings": "httpupgrade", "kcpSettings": "kcp",
+                    "rawSettings": "tcp", "tcpSettings": "tcp",
+                }[candidate]
+                break
+    network = _normalize_network(network_raw)
+    path = host = service = mode = header_type = ""
+    extra = {}
+
+    if network == "ws":
+        ws = stream.get("wsSettings") if isinstance(stream.get("wsSettings"), dict) else {}
+        path = str(ws.get("path") or "")
+        host = _xray_host(ws.get("host")) or _xray_host(ws.get("headers"))
+        heartbeat = ws.get("heartbeatPeriod")
+        if heartbeat:
+            extra["eh"] = str(heartbeat)
+    elif network == "grpc":
+        grpc = stream.get("grpcSettings") if isinstance(stream.get("grpcSettings"), dict) else {}
+        service = str(grpc.get("serviceName") or "")
+        host = str(grpc.get("authority") or "")
+        if grpc.get("multiMode"):
+            mode = "multi"
+    elif network == "xhttp":
+        xhttp = stream.get("xhttpSettings") if isinstance(stream.get("xhttpSettings"), dict) else {}
+        path = str(xhttp.get("path") or "")
+        host = _xray_host(xhttp.get("host")) or _xray_host(xhttp.get("headers"))
+        mode = str(xhttp.get("mode") or "")
+        # Keep the fine settings (xmux, padding, downloadSettings) the same way a
+        # `vless://...&extra={...}` link carries them; _stream_settings overlays
+        # the explicit path/mode/host on top.
+        if xhttp:
+            try:
+                extra["extra"] = json.dumps(xhttp, ensure_ascii=False, separators=(",", ":"))
+            except (TypeError, ValueError):
+                pass
+    elif network == "httpupgrade":
+        upgrade = stream.get("httpupgradeSettings") if isinstance(stream.get("httpupgradeSettings"), dict) else {}
+        path = str(upgrade.get("path") or "")
+        host = _xray_host(upgrade.get("host")) or _xray_host(upgrade.get("headers"))
+    elif network == "kcp":
+        kcp = stream.get("kcpSettings") if isinstance(stream.get("kcpSettings"), dict) else {}
+        seed = str(kcp.get("seed") or "")
+        if seed:
+            extra["seed"] = seed
+        header = kcp.get("header") if isinstance(kcp.get("header"), dict) else {}
+        header_type = str(header.get("type") or "")
+    elif network == "tcp":
+        raw = stream.get("rawSettings")
+        if not isinstance(raw, dict):
+            raw = stream.get("tcpSettings") if isinstance(stream.get("tcpSettings"), dict) else {}
+        header = raw.get("header") if isinstance(raw.get("header"), dict) else {}
+        header_type = str(header.get("type") or "")
+        request = header.get("request") if isinstance(header.get("request"), dict) else {}
+        request_path = request.get("path")
+        if isinstance(request_path, (list, tuple)) and request_path:
+            path = str(request_path[0])
+        elif isinstance(request_path, str):
+            path = request_path
+        host = _xray_host(request.get("headers"))
+    return network, path, host, service, mode, header_type, extra
+
+
+def _xray_outbound(obj):
+    """One Xray `outbounds[]` item -> zero or more `VlessNode`s.
+
+    Handles both shapes a 3x-ui JSON subscription uses: the flat
+    `settings: {address, port, id, ...}` form and the stock
+    `settings.vnext[].users[]` form. Anything that is not VLESS is ignored:
+    the helper only registers the VLESS outbound, and pretending to import a
+    protocol it cannot start is worse than counting it as skipped.
+    """
+    if not isinstance(obj, dict):
+        return []
+    if str(obj.get("protocol") or "").strip().lower() != "vless":
+        return []
+    settings = obj.get("settings") if isinstance(obj.get("settings"), dict) else {}
+    stream = obj.get("streamSettings") if isinstance(obj.get("streamSettings"), dict) else {}
+    tls = _xray_tls_fields(stream)
+    network, path, host, service, mode, header_type, extra = _xray_transport_fields(stream)
+    if tls["mldsa65_verify"]:
+        extra["pqv"] = tls["mldsa65_verify"]
+    if tls["ech"]:
+        extra["ech"] = tls["ech"]
+    if tls["cs"]:
+        extra["cs"] = tls["cs"]
+    if tls["vcn"]:
+        extra["vcn"] = tls["vcn"]
+    if tls["pcs"]:
+        extra["pcs"] = ",".join(str(v) for v in tls["pcs"]) if isinstance(
+            tls["pcs"], (list, tuple)) else str(tls["pcs"])
+
+    servers = []
+    vnext = settings.get("vnext")
+    if isinstance(vnext, list):
+        for entry in vnext:
+            if not isinstance(entry, dict):
+                continue
+            address = str(entry.get("address") or "").strip()
+            users = entry.get("users") if isinstance(entry.get("users"), list) else [entry]
+            for user in users:
+                if isinstance(user, dict):
+                    servers.append((address, entry.get("port"), user, entry))
+    elif settings.get("address") and settings.get("id"):
+        servers.append((str(settings.get("address") or "").strip(), settings.get("port"),
+                        settings, settings))
+
+    nodes = []
+    for address, raw_port, user, parent in servers:
+        uuid = str(user.get("id") or user.get("uuid") or "").strip()
+        try:
+            port = int(raw_port)
+        except (TypeError, ValueError):
+            continue
+        if not address or not uuid or not (1 <= port <= 65535):
+            continue
+        remark = str(obj.get("remark") or parent.get("remark") or "").strip()
+        if not remark:
+            tag = str(obj.get("tag") or "").strip()
+            remark = "" if tag.lower() in ("proxy", "direct", "block", "outbound") else tag
+        nodes.append(VlessNode(
+            uuid=uuid,
+            host=address,
+            port=port,
+            remark=remark,
+            security=tls["security"],
+            sni=tls["sni"],
+            alpn=tls["alpn"],
+            fingerprint=tls["fingerprint"],
+            allow_insecure=tls["allow_insecure"],
+            reality_public_key=tls["reality_public_key"],
+            reality_short_id=tls["reality_short_id"],
+            reality_spider_x=tls["reality_spider_x"],
+            network=network,
+            path=path,
+            host_header=host,
+            service_name=service,
+            mode=mode,
+            header_type=header_type,
+            flow=str(user.get("flow") or parent.get("flow") or "").strip(),
+            encryption=str(user.get("encryption") or parent.get("encryption") or "none").strip(),
+            extra=extra,
+        ))
+    return nodes
+
+
+def parse_xray_json(raw, stats=None):
+    """VLESS nodes in an Xray client config, as 3x-ui's `/subJsonPath` serves it.
+
+    A lone config, an array of configs, or one outbound object are all accepted.
+    Inbounds, routing, DNS, balancers and `sockopt` are deliberately ignored:
+    Nova builds its own SOCKS/HTTP inbounds and its own PAC routing, and a
+    server-provided routing table must never be allowed to override them.
+    `stats`, when given, receives the other protocols skipped and malformed
+    VLESS outbounds, so the window can explain an import of zero.
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return []
+    start = -1
+    for index, char in enumerate(text):
+        if char in "{[":
+            start = index
+            break
+    if start < 0:
+        return []
+    try:
+        payload = json.loads(text[start:])
+    except (ValueError, RecursionError):
+        return []
+    documents = payload if isinstance(payload, list) else [payload]
+    nodes = []
+    for document in documents:
+        if not isinstance(document, dict):
+            continue
+        outbounds = document.get("outbounds")
+        if isinstance(outbounds, list):
+            items = outbounds
+        elif document.get("protocol") and document.get("settings"):
+            items = [document]
+        else:
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            protocol = str(item.get("protocol") or "").strip().lower()
+            if not protocol:
+                # A sing-box outbound has `type`, not `protocol`; it was already
+                # handled above and must not be reported as a malformed Xray one.
+                continue
+            if protocol in ("freedom", "blackhole", "dns"):
+                # The local direct/block/DNS outbounds every Xray config carries
+                # are not "another protocol" the subscription offered.
+                continue
+            if protocol != "vless":
+                if isinstance(stats, dict):
+                    stats["other_scheme"] = max(0, stats.get("other_scheme", 0)) + 1
+                continue
+            found = _xray_outbound(item)
+            if not found and isinstance(stats, dict):
+                stats["bad"] = max(0, stats.get("bad", 0)) + 1
+            nodes.extend(found)
+            if len(nodes) >= MAX_NODES:
+                return nodes[:MAX_NODES]
+    return nodes
+
+
 def _without_metadata_comments(text):
     """The body with the `#profile-title:`-style header lines removed.
 
@@ -616,7 +914,8 @@ def parse_many(raw, limit=MAX_NODES):
     `#profile-web-page-url:`, and a naive parser reports five failures on every refresh.
     """
     text = decode_subscription_body(raw)
-    stats = {"total": 0, "vless": 0, "other_scheme": 0, "bad": 0, "duplicate": 0, "truncated": 0}
+    stats = {"total": 0, "vless": 0, "other_scheme": 0, "bad": 0, "duplicate": 0,
+             "truncated": 0, "xray_json": 0}
 
     nodes = []
     seen = set()
@@ -640,6 +939,21 @@ def parse_many(raw, limit=MAX_NODES):
         take(node)
     if nodes:
         stats["total"] = stats["vless"]
+        return nodes, stats
+
+    # 3x-ui's `/subJsonPath` is a full Xray config (`protocol: vless` + flat
+    # `settings`), not sing-box (`type: vless` + `server`). Without this pass a
+    # panel URL that the window promises to understand imported zero nodes.
+    for node in parse_xray_json(text, stats=stats):
+        stats["vless"] += 1
+        stats["xray_json"] += 1
+        take(node)
+    if nodes:
+        stats["total"] = stats["vless"]
+        return nodes, stats
+    if text.lstrip()[:1] in ("{", "["):
+        # A JSON body is not a line list. Counting each `"key": value` line as a
+        # broken link was the old behaviour and made a panel answer look corrupt.
         return nodes, stats
 
     for line in text.splitlines():
@@ -728,14 +1042,28 @@ def _known_fingerprint(name, for_reality=False):
     return text
 
 
+def _env_switch(name):
+    value = str(os.environ.get(name, "") or "").strip().lower()
+    return value in {"1", "true", "on", "yes"}
+
+
 def _honor_pcs():
     """True when the link's `pcs` pin is applied to the TLS settings.
 
     Off by default: a stale pin kills a live node, while the certificate is already verified against
     `serverName`. `NOVA_VLESS_HONOR_PCS=1` restores the old, strict behaviour.
     """
-    value = str(os.environ.get("NOVA_VLESS_HONOR_PCS", "") or "").strip().lower()
-    return value in {"1", "true", "on", "yes"}
+    return _env_switch("NOVA_VLESS_HONOR_PCS")
+
+
+def _honor_ech():
+    """True when the link's `ech` config is applied. Off by default: a stale ECHConfig blocks TLS."""
+    return _env_switch("NOVA_VLESS_HONOR_ECH")
+
+
+def _honor_cs():
+    """True when the link's `cs` cipher list is applied. Off by default: a dropped suite blocks TLS."""
+    return _env_switch("NOVA_VLESS_HONOR_CS")
 
 
 def _header_request(node):
@@ -802,6 +1130,16 @@ def _stream_settings(node):
         by_name = node.extra.get("vcn")
         if by_name:
             tls["verifyPeerCertByName"] = by_name
+        # ECH and an explicit cipher list are newer panel output (3x-ui writes both). They are
+        # opt-in for the same reason as `pcs`: a stale ECHConfig or a suite the edge dropped makes
+        # a node that works with the defaults fail the handshake. `NOVA_VLESS_HONOR_ECH=1` and
+        # `NOVA_VLESS_HONOR_CS=1` turn them on without changing every other node.
+        ech = node.extra.get("ech")
+        if ech and _honor_ech():
+            tls["echConfigList"] = ech
+        suites = node.extra.get("cs")
+        if suites and _honor_cs():
+            tls["cipherSuites"] = suites
         stream["tlsSettings"] = tls
     else:
         stream["security"] = "none"
@@ -821,11 +1159,18 @@ def _stream_settings(node):
         if early and "ed=" not in ws["path"]:
             joiner = "&" if "?" in ws["path"] else "?"
             ws["path"] = "%s%sed=%s" % (ws["path"], joiner, early)
+        # `eh` is the link spelling of wsSettings.heartbeatPeriod. Link parameters are strings,
+        # and the core's field is uint32: passing the string straight through fails the whole
+        # config load ("cannot unmarshal string into Go struct field ... of type uint32"), so it
+        # is converted here and dropped when it is not a positive integer.
         header = node.extra.get("eh")
         if header:
-            ws["heartbeatPeriod"] = header if isinstance(header, int) else ws.get("heartbeatPeriod", 0)
-            if not ws["heartbeatPeriod"]:
-                ws.pop("heartbeatPeriod", None)
+            try:
+                heartbeat = int(str(header).strip())
+            except (TypeError, ValueError):
+                heartbeat = 0
+            if 0 < heartbeat <= 0xFFFFFFFF:
+                ws["heartbeatPeriod"] = heartbeat
         stream["wsSettings"] = ws
     elif network == "httpupgrade":
         upgrade = {"path": node.path or "/"}
