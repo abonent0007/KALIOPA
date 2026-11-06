@@ -451,6 +451,28 @@ def _issue_split(record, is_fatal=None):
     return fatal, warnings
 
 
+def _cloudflare_sort_key(record, stats, live_id=""):
+    """Display order for AWG Cloudflare: live, proven, untested, failed; then ping.
+
+    The row's «мс» is a TCP/handshake latency, not throughput. WARPgen_09
+    answers in 28 ms but refuses the tunnel, so a pure numeric sort would put a
+    dead node first. `ok >= 2` is the same evidence the connect plan uses.
+    """
+    entry = stats.get(record.get("id")) if isinstance(stats, dict) else None
+    entry = entry if isinstance(entry, dict) else {}
+    failures = max(0, int(_num(entry.get("fail_streak"))))
+    rtt = entry.get("rtt_ms")
+    try:
+        rtt = int(rtt) if rtt is not None else 10 ** 6
+    except (TypeError, ValueError):
+        rtt = 10 ** 6
+    last_ok = _num(entry.get("last_ok_at"))
+    last_fail = _num(entry.get("last_fail_at"))
+    known = 0 if int(_num(entry.get("ok"))) >= 2 and last_ok >= last_fail else 1
+    live = 0 if live_id and record.get("id") == live_id else 1
+    return (live, failures, known, rtt, str(record.get("name") or ""))
+
+
 def format_row_text(record, *, live=False, outcome="не проверялся", pad="   ", is_fatal=None,
                     reserve=False):
     """One listbox row: «● name  ·  endpoint  ·  outcome» (no monospace alignment).
@@ -487,6 +509,8 @@ def format_list_header(group, records, loaded=True):
         }
         return f"В группе «{group_caption(group)}» пока нет профилей — {hints.get(group, 'добавьте профиль')}"
     text = f"{group_caption(group)}: {total} {_plural(total, 'профиль', 'профиля', 'профилей')}"
+    if group == GROUP_CLOUDFLARE:
+        text += " · рабочие → пинг"
     if group == GROUP_CLOUDFLARE:
         generated = sum(1 for r in records if r.get("origin") == "generated")
         bundled = sum(1 for r in records if r.get("origin") == "bundled")
@@ -1868,6 +1892,8 @@ class ProfilesWindow:
         live_id, connected = self._live_profile_id()
         reserve_id = self._reserve_profile_id()
         stats = self._snapshot.get("stats") or {}
+        if group == GROUP_CLOUDFLARE:
+            records = sorted(records, key=lambda r: _cloudflare_sort_key(r, stats, live_id))
         is_fatal = self._is_fatal_fn()
         rows = []
         for record in records:

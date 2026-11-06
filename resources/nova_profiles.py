@@ -1451,14 +1451,47 @@ def _is_legacy_seed_copy(record):
     return bool(match and _BUNDLED_NAME_RE.fullmatch(match.group(1)))
 
 
-def _generated_metrics(generated_state, record):
+def _generated_metrics(generated_state, record, stats=None):
+    """(failures, known, rtt) for one generated profile.
+
+    `warp-generated-state.json` records the endpoint scan, and its `rtt_ms` is
+    a placeholder 999 when the scan has not measured the host; the live
+    `profile-stats.json` is the better source. Without this merge every
+    generated profile tied at 999 and the group was walked in name order —
+    WARPgen_01 first even when 09 answered in 28 ms and 01 in 92 ms.
+
+    `known` is 1 for a profile that has carried at least two successful
+    connections since its last failure. A low TCP ping alone does not prove
+    that Cloudflare accepts the key: WARPgen_09 pings in 28 ms and refuses the
+    tunnel, so a never-tested node must not jump over a proven one.
+    """
     profiles = generated_state.get("profiles") if isinstance(generated_state, dict) else None
     entry = {}
     if isinstance(profiles, dict):
         entry = profiles.get(record["name"]) or profiles.get(record["id"]) or {}
     if not isinstance(entry, dict):
         entry = {}
-    return _as_int(entry.get("failures"), 0), _as_float(entry.get("rtt_ms"), float("inf"))
+    failures = _as_int(entry.get("failures"), 0)
+    rtt = _as_float(entry.get("rtt_ms"), float("inf"))
+    stats_entry = stats.get(record["id"]) if isinstance(stats, dict) else None
+    stats_entry = stats_entry if isinstance(stats_entry, dict) else {}
+    failures = max(failures, _as_int(stats_entry.get("fail_streak"), 0))
+    now = time.time()
+    stats_rtt = stats_entry.get("rtt_ms")
+    rtt_at = _as_float(stats_entry.get("rtt_at"), 0.0)
+    if stats_rtt is not None and rtt_at and 0 <= now - rtt_at < VLESS_MEMORY_SEC:
+        try:
+            measured = int(stats_rtt)
+        except (TypeError, ValueError):
+            measured = None
+        if measured is not None and measured > 0:
+            rtt = measured if not (0 < rtt < 999) else min(rtt, measured)
+    last_ok = _as_float(stats_entry.get("last_ok_at"), 0.0)
+    last_fail = _as_float(stats_entry.get("last_fail_at"), 0.0)
+    ok_count = _as_int(stats_entry.get("ok"), 0)
+    fresh_ok = last_ok and 0 <= now - last_ok < VLESS_MEMORY_SEC and last_ok >= last_fail
+    known = 1 if ok_count >= 2 and fresh_ok else 0
+    return failures, known, rtt
 
 
 def _stats_failures(stats, record):
@@ -1531,24 +1564,29 @@ def _move_to_front(records, preferred_id):
     return False
 
 
-def _cloudflare_segments(records, preferred_id, generated_state):
+def _cloudflare_segments(records, preferred_id, generated_state, stats=None):
     """(lead, pool, rest): healthy own profiles by rtt, the shared/bundled pool, own profiles that failed."""
     generated = [r for r in records if r["origin"] == ORIGIN_GENERATED]
     pool = [r for r in records if r["origin"] != ORIGIN_GENERATED]  # bundled seeds + hand-dropped confs
 
     def generated_key(record):
-        failures, rtt = _generated_metrics(generated_state, record)
-        return (failures, rtt, natural_key(record["name"]))
+        failures, known, rtt = _generated_metrics(generated_state, record, stats)
+        # Known-working first, then the nearest: an untested 28 ms endpoint may
+        # refuse the key (WARPgen_09 does), while a proven 92 ms one carries
+        # traffic. Failures always sort last, whatever the ping says.
+        return (failures, -known, rtt, natural_key(record["name"]))
 
-    healthy = sorted((r for r in generated if _generated_metrics(generated_state, r)[0] == 0), key=generated_key)
+    healthy = sorted(
+        (r for r in generated if _generated_metrics(generated_state, r, stats)[0] == 0),
+        key=generated_key)
     lead = healthy[:AUTO_GENERATED_LEAD_LIMIT]
     lead_ids = {r["id"] for r in lead}
     rest = sorted((r for r in generated if r["id"] not in lead_ids), key=generated_key)
     return lead, _identity_round_robin(pool, preferred_id), rest
 
 
-def _cloudflare_order(records, preferred_id, generated_state):
-    lead, pool, rest = _cloudflare_segments(records, preferred_id, generated_state)
+def _cloudflare_order(records, preferred_id, generated_state, stats=None):
+    lead, pool, rest = _cloudflare_segments(records, preferred_id, generated_state, stats)
     return lead + pool + rest
 
 
@@ -1787,7 +1825,7 @@ def build_attempt_plan(profiles, sel, *, preferred_id="", generated_state=None, 
         if group == GROUP_CLOUDFLARE:
             # The preferred profile leads its own segment only: a seed never jumps over own profiles,
             # and an own profile that has failed since stays behind the seeds, where failures go.
-            lead, pool, rest = _cloudflare_segments(members(group), preferred, generated_state)
+            lead, pool, rest = _cloudflare_segments(members(group), preferred, generated_state, stats)
             ordered = _front(lead, preferred) + pool + _front(rest, preferred)
         elif group == GROUP_PROTON:
             country = effective.get("country", "")
@@ -1802,7 +1840,7 @@ def build_attempt_plan(profiles, sel, *, preferred_id="", generated_state=None, 
             ordered = _front(_stats_order(members(group), stats), preferred)
         return [_attempt(r) for r in ordered]
 
-    lead, pool, rest = _cloudflare_segments(members(GROUP_CLOUDFLARE), preferred, generated_state)
+    lead, pool, rest = _cloudflare_segments(members(GROUP_CLOUDFLARE), preferred, generated_state, stats)
     masque = [r for r in _stats_order(members(GROUP_MASQUE), stats) if not _masque_locked_out(r, stats, now)]
     proton = _proton_order(members(GROUP_PROTON), stats, now)
     proton_head = proton[:AUTO_PROTON_LIMIT]

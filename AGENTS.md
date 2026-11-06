@@ -24,7 +24,7 @@ KALIOPA — приватный форк Nova: Windows-приложение дл�
 маршрутизация (WARP/MASQUE, Opera VPN, Tor, профили), подбор стратегий обучения
 (Rust-движок), Telegram-релей с нейтральным SNI.
 
-Версия приложения: **1.44.2.24** (`resources/nova_metadata.py`); Rust workspace —
+Версия приложения: **1.44.2.25** (`resources/nova_metadata.py`); Rust workspace —
 1.43.2 (`nova-rs/Cargo.toml`). Стек: Python 3.14 + tkinter (GUI), Rust 2024
 (1.90+; движок/обучение/пробы/TLS), Go 1.27 (nova-go MASQUE/WARP, nova-xray VLESS/VMess/Trojan/SS), WinDivert/WFP.
 Upstream: https://github.com/confeden/Nova; приватный форк: https://github.com/abonent0007/KALIOPA.
