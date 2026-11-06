@@ -70,11 +70,16 @@ TAB_TOR = "tor"
 # no profile list of its own -- what it brings lands in VLESS and «Custom AWG» -- so it reuses the
 # list panel with rows of its own.
 TAB_SUBS = "subscriptions"
+def group_caption(group):
+    """What the window calls a group; the folder/id stay the historical constant."""
+    return "Xray" if group == GROUP_VLESS else group
+
+
 TABS = (
     (GROUP_CLOUDFLARE, "AWG Cloudflare"),
     (GROUP_PROTON, "AWG Proton"),
     (GROUP_MASQUE, "MASQUE"),
-    (GROUP_VLESS, "VLESS"),
+    (GROUP_VLESS, "Xray"),
     # The group's folder, its id prefix and everything stored under it stay "Custom"; only the
     # caption says what is in it, because «Custom» alone told the owner nothing.
     (GROUP_CUSTOM, "Custom AWG"),
@@ -477,11 +482,11 @@ def format_list_header(group, records, loaded=True):
             GROUP_CLOUDFLARE: "нажмите «Сгенерировать свои»",
             GROUP_PROTON: "нажмите «Выпустить профили»",
             GROUP_MASQUE: "нажмите «Зарегистрировать»",
-            GROUP_VLESS: "нажмите «Обновить профили» или вставьте ссылку vless:// из буфера",
+            GROUP_VLESS: "нажмите «Обновить профили» или вставьте ссылку vless/trojan/vmess/ss из буфера",
             GROUP_CUSTOM: "импортируйте файл или вставьте конфиг из буфера",
         }
-        return f"В группе «{group}» пока нет профилей — {hints.get(group, 'добавьте профиль')}"
-    text = f"{group}: {total} {_plural(total, 'профиль', 'профиля', 'профилей')}"
+        return f"В группе «{group_caption(group)}» пока нет профилей — {hints.get(group, 'добавьте профиль')}"
+    text = f"{group_caption(group)}: {total} {_plural(total, 'профиль', 'профиля', 'профилей')}"
     if group == GROUP_CLOUDFLARE:
         generated = sum(1 for r in records if r.get("origin") == "generated")
         bundled = sum(1 for r in records if r.get("origin") == "bundled")
@@ -523,7 +528,7 @@ def _age_text(stamp, now=None):
 
 
 def _subs_kind_word(kind):
-    return {"vless": "VLESS", "awg": "AWG"}.get(str(kind or "").lower(), "авто")
+    return {"vless": "Xray", "awg": "AWG"}.get(str(kind or "").lower(), "авто")
 
 
 def _format_volume(value):
@@ -654,7 +659,7 @@ def format_subs_header(records, loaded=True):
         return "Загрузка подписок…"
     total = len(records or [])
     if not total:
-        return "Подписок нет — «Добавить…» и вставьте ссылку на список VLESS, Xray-JSON или AWG"
+        return "Подписок нет — «Добавить…» и вставьте ссылку на список Xray, Xray-JSON или AWG"
     on = sum(1 for r in records if r.get("enabled", True))
     nodes = sum(max(0, int(_num(r.get("node_count")))) for r in records)
     text = f"Подписки: {total}, включено {on}"
@@ -668,26 +673,27 @@ def format_selection_text(effective, selection=None):
     sel = selection if isinstance(selection, dict) else {}
     mode = str(eff.get("mode") or "auto")
     group = str(eff.get("group") or "")
+    label = group_caption(group)
     reason = str(eff.get("reason") or "")
     if mode == "profile":
         profile_id = str(eff.get("profile_id") or "")
         name = profile_id.partition("/")[2] or profile_id
-        text = f"Профиль «{name}» из группы «{group}»"
+        text = f"Профиль «{name}» из группы «{label}»"
     elif mode == "group":
         if reason == _REASON_PROFILE_DELETED:
             wanted = str(sel.get("profile") or sel.get("profile_id") or "")
             name = wanted.partition("/")[2] or wanted or "?"
-            return f"Профиль «{name}» удалён — используется группа «{group}»"
-        text = f"Группа «{group}»: Nova перебирает только её профили"
+            return f"Профиль «{name}» удалён — используется группа «{label}»"
+        text = f"Группа «{label}»: Nova перебирает только её профили"
     else:
         # Both imported groups are out of «Авто» (D25), and the line used to name only one of them.
-        text = "Авто: Nova сама выбирает профиль из своих групп; VLESS и Custom AWG — только вручную"
+        text = "Авто: Nova сама выбирает профиль из своих групп; Xray и Custom AWG — только вручную"
     if reason:
         text += f" — {reason}"
     return text
 
 
-_BACKEND_NAMES = {"awg": "AWG", "masque": "MASQUE", "vless": "VLESS",
+_BACKEND_NAMES = {"awg": "AWG", "masque": "MASQUE", "vless": "Xray",
                   "cloudflare": "WARP", "warp-cli": "WARP"}
 
 
@@ -2329,9 +2335,9 @@ class ProfilesWindow:
         making the owner classify their own link is making them guess.
         """
         url = self._ask_string("Новая подписка",
-                               "Ссылка на подписку (http/https).\n\nПодойдёт список vless://, "
-                               "raw- или JSON-подписка Xray/3x-ui, конфиги "
-                               "WireGuard/AmneziaWG — Nova сама разберёт содержимое.")
+                               "Ссылка на подписку (http/https).\n\nПодойдёт список Xray "
+                               "(vless/trojan/vmess/ss), raw- или JSON-подписка Xray/3x-ui, "
+                               "конфиги WireGuard/AmneziaWG — Nova сама разберёт содержимое.")
         if not url:
             return
         url = url.strip()

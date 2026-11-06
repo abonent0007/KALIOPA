@@ -20,15 +20,17 @@
 - **Telegram** через отдельный SOCKS5-релей `127.0.0.1:1372` → WARP → DC;
   MTProto не идёт через Opera/Tor HTTP.
 - **PAC-маршрутизация**: браузер получает PAC на `127.0.0.1:1369`, выбирает
-  `SOCKS5 1370` (WARP/MASQUE/Proton AWG/CF AWG/VLESS), `HTTP 1371` (Opera) или
+  `SOCKS5 1370` (WARP/MASQUE/Proton AWG/CF AWG/Xray), `HTTP 1371` (Opera) или
   `DIRECT`; `.ru` и exclude — напрямую.
-- **Резервы по слотам**: Tor `1375/1378`, VLESS-профиль `1379/1380`; в каждом
+- **Резервы по слотам**: Tor `1375/1378`, Xray-профиль `1379/1380`; в каждом
   слоте одновременно живёт только один backend.
 - **DNS/NRPT** отдельным путём: AI-домены через каскад dns-ai → comss →
   geohide; DoH — опционально (`NOVA_DOH_GLOBAL=1`).
-- **Профили и подписки**: Proton AWG (до 3 вариантов на узел), VLESS-подписки,
-  WARP/CF AWG, импорт своих конфигов.
-- **Стабильность**: backoff Opera, карантин мёртвых VLESS-узлов, TCP-гейт
+- **Профили и подписки**: Proton AWG (до 3 вариантов на узел), Xray-подписки
+  (VLESS/VMess/Trojan/SS, raw и JSON 3x-ui), WARP/CF AWG, импорт своих конфигов.
+- **Метаданные подписок**: остаток трафика, срок действия, название и интервал
+  из `Subscription-Userinfo`/`Profile-*` (включая `base64:` заголовки).
+- **Стабильность**: backoff Opera, карантин мёртвых Xray-узлов, TCP-гейт
   endpoint'ов, уборка осиротевших процессов.
 
 ## Установка
@@ -39,7 +41,7 @@
 - Для WinDivert/WFP приложение само запросит права администратора.
 - Поверх существующей Nova ставится как обновление; профили и `temp/` не удаляются.
 
-Актуальный релиз: **[v1.44.2.23](https://github.com/abonent0007/KALIOPA/releases/tag/v1.44.2.23)**.
+Актуальный релиз: **[v1.44.2.24](https://github.com/abonent0007/KALIOPA/releases/tag/v1.44.2.24)**.
 
 ## Донаты на дальнейшее развитие принимаются по ссылке ниже:
 **[Ваша помощь в развитии это вклад в свободный интернет для всех.](https://www.sberbank.ru/ru/choise_bank?requisiteNumber=79684520007&bankCode=100000000111)**
@@ -69,6 +71,8 @@ DNS → NRPT (AI-домены) → dns-ai / comss / geohide
 | ChatGPT/Gemini | зависит от выхода | Opera-слот + PAC `ai_apps=opera` |
 | Opera | published endpoints первыми | discover + fastest, TCP-гейт relay, кэш рабочего edge |
 | Релей | логин из `CURRENT_VERSION` | версия подбирается под ключ |
+| Протоколы | VLESS | VLESS + VMess/Trojan/SS, JSON 3x-ui |
+| Подписки | интервал локальный | + трафик/срок/название из заголовков |
 | PAC | базовые правила | policy-check, Tor-fallback только в «Авто» |
 | Окно | 360×270 | размер фона 967×540, UI scale |
 | Автообновление | включено | отключено; только списки и профили |

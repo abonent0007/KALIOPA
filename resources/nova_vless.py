@@ -33,8 +33,9 @@ import unicodedata
 from urllib.parse import quote, unquote
 
 __all__ = [
-    "SCHEME", "NETWORKS", "SECURITIES",
-    "VlessNode", "parse_uri", "parse_singbox_text", "parse_many", "parse_xray_json",
+    "SCHEME", "NETWORKS", "SECURITIES", "PROTOCOLS",
+    "VlessNode", "parse_uri", "parse_link", "parse_trojan_uri", "parse_vmess_uri",
+    "parse_ss_uri", "parse_singbox_text", "parse_many", "parse_xray_json",
     "validate", "build_xray_config", "decode_subscription_body", "safe_profile_name",
 ]
 
@@ -55,6 +56,7 @@ _NETWORK_ALIASES = {
 # on, so a link claiming it is rejected by `validate` instead of failing at load time.
 NETWORKS = ("tcp", "ws", "grpc", "xhttp", "httpupgrade", "kcp")
 SECURITIES = ("none", "tls", "reality")
+PROTOCOLS = ("vless", "vmess", "trojan", "shadowsocks")
 
 # REALITY only supports RAW, XHTTP and gRPC (infra/conf/transport_internet.go:101). Over ws,
 # httpupgrade or kcp the core refuses the WHOLE configuration, so the tunnel does not merely fail to
@@ -214,13 +216,15 @@ class VlessNode(object):
         "reality_public_key", "reality_short_id", "reality_spider_x",
         "network", "path", "host_header", "service_name", "mode", "header_type",
         "flow", "encryption", "extra",
+        "protocol", "password", "method", "alter_id",
     )
 
     def __init__(self, uuid, host, port, remark="", security="none", sni="", alpn=(),
                  fingerprint="", allow_insecure=False, reality_public_key="",
                  reality_short_id="", reality_spider_x="", network="tcp", path="",
                  host_header="", service_name="", mode="", header_type="", flow="",
-                 encryption="none", extra=None):
+                 encryption="none", extra=None, protocol="vless", password="", method="",
+                 alter_id=0):
         self.uuid = str(uuid or "")
         self.host = str(host or "")
         self.port = int(port)
@@ -242,6 +246,15 @@ class VlessNode(object):
         self.flow = str(flow or "")
         self.encryption = str(encryption or "none")
         self.extra = dict(extra or {})
+        self.protocol = str(protocol or "vless").strip().lower()
+        if self.protocol not in PROTOCOLS:
+            self.protocol = "vless"
+        self.password = str(password or "")
+        self.method = str(method or "")
+        try:
+            self.alter_id = max(0, int(alter_id or 0))
+        except (TypeError, ValueError):
+            self.alter_id = 0
 
     @property
     def is_reality(self):
@@ -273,6 +286,8 @@ class VlessNode(object):
         parameter is, because neighbouring lines in real subscriptions differ only by `fp` or
         `alpn` and a shortened key collapses distinct nodes into one.
         """
+        if self.protocol != "vless":
+            return self._other_identity()
         params = {}
 
         def put(key, value):
@@ -304,12 +319,60 @@ class VlessNode(object):
         tail = "".join("|%s=%s" % (k, params[k]) for k in sorted(params))
         return head + tail
 
+    def _other_identity(self):
+        """Identity for VMess/Trojan/Shadowsocks; VLESS keeps its historical key.
+
+        Prefixing the protocol keeps a Trojan and a VLESS node on the same
+        host:port from collapsing into one profile. The VLESS branch above is
+        untouched on purpose: changing its key would make every existing
+        subscription look replaced on the next refresh.
+        """
+        params = {}
+
+        def put(key, value):
+            text = str(value or "").strip()
+            if text and text != "null":
+                params[key] = text
+
+        put("protocol", self.protocol)
+        put("security", self.security)
+        put("type", self.network)
+        put("sni", self.sni)
+        put("fp", self.fingerprint)
+        put("alpn", ",".join(self.alpn))
+        put("pbk", self.reality_public_key)
+        put("sid", self.reality_short_id)
+        put("spx", self.reality_spider_x)
+        put("path", self.path)
+        put("host", self.host_header)
+        put("serviceName", self.service_name)
+        put("mode", self.mode)
+        put("headerType", self.header_type)
+        if self.protocol == "vmess":
+            put("id", self.uuid)
+            put("aid", self.alter_id)
+            put("scy", self.method or "auto")
+        elif self.protocol == "trojan":
+            put("password", self.password)
+            put("flow", self.flow)
+        elif self.protocol == "shadowsocks":
+            put("method", self.method)
+            put("password", self.password)
+        for key, value in self.extra.items():
+            put(key, value)
+
+        head = "%s|%s|%d" % (self.protocol, self.host.lower(), self.port)
+        tail = "".join("|%s=%s" % (k, params[k]) for k in sorted(params))
+        return head + tail
+
     @property
     def display_name(self):
         return self.remark.strip() or self.endpoint
 
     def to_uri(self):
         """Back to a `vless://` link. Round-trips through `parse_uri` for everything parsed here."""
+        if self.protocol != "vless":
+            return self._other_uri()
         authority_host = "[%s]" % self.host if ":" in self.host else self.host
         params = []
 
@@ -346,11 +409,78 @@ class VlessNode(object):
             base += "#" + _encode(self.remark)
         return base
 
+    def _other_uri(self):
+        authority_host = "[%s]" % self.host if ":" in self.host else self.host
+        if self.protocol == "shadowsocks":
+            userinfo = "%s:%s" % (self.method, self.password)
+            token = base64.urlsafe_b64encode(userinfo.encode("utf-8")).decode("ascii").rstrip("=")
+            link = "ss://%s@%s:%d" % (token, authority_host, self.port)
+            return link + ("#" + _encode(self.remark) if self.remark else "")
+
+        if self.protocol == "vmess":
+            obj = {
+                "v": "2",
+                "ps": self.remark,
+                "add": self.host,
+                "port": str(self.port),
+                "id": self.uuid,
+                "aid": str(self.alter_id),
+                "scy": self.method or "auto",
+                "net": self.network,
+                "type": self.header_type or "none",
+                "host": self.host_header,
+                "path": self.path,
+                "tls": self.security if self.security in ("tls", "reality") else "",
+                "sni": self.sni,
+                "alpn": ",".join(self.alpn),
+                "fp": self.fingerprint,
+            }
+            for key, value in self.extra.items():
+                obj.setdefault(key, value)
+            text = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+            return "vmess://" + base64.b64encode(text.encode("utf-8")).decode("ascii")
+
+        # Trojan: the stream parameters are the same names VLESS uses; only the
+        # authority is a password instead of a UUID.
+        params = []
+
+        def add(key, value):
+            text = str(value or "").strip()
+            if text:
+                params.append((key, text))
+
+        add("type", self.network)
+        add("security", self.security)
+        add("sni", self.sni)
+        add("fp", self.fingerprint)
+        add("alpn", ",".join(self.alpn))
+        if self.allow_insecure:
+            add("allowInsecure", "1")
+        add("pbk", self.reality_public_key)
+        add("sid", self.reality_short_id)
+        add("spx", self.reality_spider_x)
+        add("path", self.path)
+        add("host", self.host_header)
+        add("serviceName", self.service_name)
+        add("mode", self.mode)
+        add("headerType", self.header_type)
+        add("flow", self.flow)
+        for key, value in self.extra.items():
+            add(key, value)
+        query = "&".join("%s=%s" % (_encode(k), _encode(v)) for k, v in params)
+        base = "trojan://%s@%s:%d" % (_encode(self.password), authority_host, self.port)
+        if query:
+            base += "?" + query
+        if self.remark:
+            base += "#" + _encode(self.remark)
+        return base
+
     def to_dict(self):
         """The stored form of a profile file. `v` is there so a later shape can be told apart."""
         return {
             "v": 1,
-            "type": "vless",
+            "type": self.protocol,
+            "protocol": self.protocol,
             "uri": self.to_uri(),
             "remark": self.remark,
             "host": self.host,
@@ -361,7 +491,7 @@ class VlessNode(object):
         }
 
     def __repr__(self):
-        return "VlessNode(%s, %s/%s)" % (self.endpoint, self.network, self.security)
+        return "%s(%s, %s/%s)" % (self.protocol, self.endpoint, self.network, self.security)
 
     def __eq__(self, other):
         return isinstance(other, VlessNode) and other.identity == self.identity
@@ -447,6 +577,221 @@ def parse_uri(raw):
         encryption=param("encryption") or "none",
         extra={k: v for k, v in params.items() if k not in _KNOWN_PARAMS},
     )
+
+
+def _stream_query_fields(params, default_security="none"):
+    """Query parameters shared by VLESS/Trojan links -> VlessNode fields."""
+    allow_raw = str(params.get("allowinsecure") or params.get("insecure") or "").strip()
+    return {
+        "security": (params.get("security") or default_security).lower(),
+        "sni": params.get("sni") or params.get("peer") or params.get("servername") or "",
+        "alpn": [a.strip() for a in str(params.get("alpn") or "").split(",") if a.strip()],
+        "fingerprint": params.get("fp") or "",
+        "allow_insecure": allow_raw == "1" or allow_raw.lower() == "true",
+        "reality_public_key": params.get("pbk") or "",
+        "reality_short_id": params.get("sid") or "",
+        "reality_spider_x": params.get("spx") or "",
+        "network": _normalize_network(params.get("type") or ""),
+        "path": params.get("path") or "",
+        "host_header": params.get("host") or "",
+        "service_name": params.get("servicename") or "",
+        "mode": params.get("mode") or "",
+        "header_type": params.get("headertype") or "",
+        "flow": params.get("flow") or "",
+        "extra": {k: v for k, v in params.items() if k not in _KNOWN_PARAMS},
+    }
+
+
+def parse_trojan_uri(raw):
+    """One `trojan://password@host:port?...` link -> a node, or None."""
+    text = str(raw or "").strip()
+    if not text or text[:9].lower() != "trojan://":
+        return None
+    body = text[9:]
+    body, sep, fragment = body.partition("#")
+    remark = _decode(fragment) if sep else ""
+    authority, sep, query = body.partition("?")
+    if not sep:
+        query = ""
+    at = authority.rfind("@")
+    if at <= 0:
+        return None
+    password = _decode(authority[:at]).strip()
+    if not password:
+        return None
+    host_port = authority[at + 1:].strip().partition("/")[0]
+    split = _split_host_port(host_port)
+    if split is None:
+        return None
+    host, port = split
+    if not host or not (1 <= port <= 65535):
+        return None
+    fields = _stream_query_fields(_parse_query(query), default_security="tls")
+    # Xray 26.x removed Flow for Trojan (`infra/conf/trojan.go`). Keeping it
+    # would either fail the config load or promise a transport the core no
+    # longer implements, so the parameter is deliberately dropped.
+    fields["flow"] = ""
+    return VlessNode(
+        uuid="", host=host, port=port, remark=remark, protocol="trojan",
+        password=password, encryption="none", **fields
+    )
+
+
+def _decode_base64_text(value):
+    """A base64 body in either alphabet -> text, or "" when it is not base64."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    padded = text + "=" * (-len(text) % 4)
+    for source in (padded, padded.translate(str.maketrans("-_", "+/"))):
+        try:
+            decoded = base64.b64decode(source, validate=False)
+        except (binascii.Error, ValueError):
+            continue
+        try:
+            text_out = decoded.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        if text_out.strip():
+            return text_out
+    return ""
+
+
+def parse_vmess_uri(raw):
+    """One `vmess://<base64 JSON>` link -> a node, or None.
+
+    VMess has no query string: the whole object is base64 JSON. The keys are
+    the v2rayN ones (`add`, `port`, `id`, `aid`, `scy`, `net`, `type`, `host`,
+    `path`, `tls`, `sni`, `alpn`, `fp`, `ps`), and generators disagree about
+    padding and the URL-safe alphabet, so both are tried.
+    """
+    text = str(raw or "").strip()
+    if not text or text[:8].lower() != "vmess://":
+        return None
+    body = text[8:].split("#", 1)[0].strip()
+    decoded = _decode_base64_text(body)
+    if not decoded:
+        return None
+    try:
+        obj = json.loads(decoded)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(obj, dict):
+        return None
+    host = str(obj.get("add") or "").strip()
+    uuid = str(obj.get("id") or "").strip()
+    try:
+        port = int(obj.get("port"))
+    except (TypeError, ValueError):
+        return None
+    if not host or not uuid or not (1 <= port <= 65535):
+        return None
+
+    network = _normalize_network(str(obj.get("net") or "tcp"))
+    tls = str(obj.get("tls") or "").strip().lower()
+    security = "reality" if tls == "reality" else ("tls" if tls in ("tls", "1", "true") else "none")
+    host_header = str(obj.get("host") or "").strip()
+    path = str(obj.get("path") or "").strip()
+    header_type = str(obj.get("type") or "").strip()
+    mode = ""
+    service_name = ""
+    if network == "grpc":
+        service_name = path or str(obj.get("serviceName") or "").strip()
+        host_header = host_header or str(obj.get("sni") or "").strip()
+        if header_type.lower() == "multi":
+            mode = "multi"
+        header_type = ""
+    extra = {}
+    for key in ("pbk", "sid", "spx", "pqv"):
+        value = str(obj.get(key) or "").strip()
+        if value:
+            extra[key] = value
+    return VlessNode(
+        uuid=uuid, host=host, port=port,
+        remark=str(obj.get("ps") or ""),
+        security=security,
+        sni=str(obj.get("sni") or "").strip(),
+        alpn=_xray_list(obj.get("alpn")),
+        fingerprint=str(obj.get("fp") or "").strip(),
+        network=network,
+        path=path,
+        host_header=host_header,
+        service_name=service_name,
+        mode=mode,
+        header_type=header_type,
+        encryption="none",
+        extra=extra,
+        protocol="vmess",
+        method=str(obj.get("scy") or "auto").strip() or "auto",
+        alter_id=int(obj.get("aid") or 0) if str(obj.get("aid") or "0").strip().lstrip("-").isdigit() else 0,
+    )
+
+
+def _ss_credentials(value):
+    """`base64(method:password)`, `method:password`, or a fully encoded body."""
+    text = _decode(value).strip()
+    if ":" in text:
+        method, _sep, password = text.partition(":")
+        return method.strip(), password
+    decoded = _decode_base64_text(text)
+    if ":" in decoded:
+        method, _sep, password = decoded.partition(":")
+        return method.strip(), password
+    return "", ""
+
+
+def parse_ss_uri(raw):
+    """One Shadowsocks link -> a node, or None.
+
+    Supports SIP002 (`ss://base64(method:password)@host:port`) and the older
+    fully-base64 form. A `plugin=` link is refused rather than silently
+    dropping the plugin: without it the node would connect to the wrong port
+    and look like a dead server.
+    """
+    text = str(raw or "").strip()
+    if not text or text[:5].lower() != "ss://":
+        return None
+    body = text[5:]
+    body, sep, fragment = body.partition("#")
+    remark = _decode(fragment) if sep else ""
+    if "?" in body:
+        body, _sep, query = body.partition("?")
+        if "plugin=" in query.lower():
+            return None
+    if "@" in body:
+        userinfo, host_port = body.rsplit("@", 1)
+        method, password = _ss_credentials(userinfo)
+    else:
+        decoded = _decode_base64_text(body)
+        if "@" not in decoded:
+            return None
+        userinfo, host_port = decoded.rsplit("@", 1)
+        method, password = _ss_credentials(userinfo)
+    split = _split_host_port(host_port.strip().partition("/")[0])
+    if split is None:
+        return None
+    host, port = split
+    if not host or not method or not (1 <= port <= 65535):
+        return None
+    return VlessNode(
+        uuid="", host=host, port=port, remark=remark, security="none",
+        network="tcp", protocol="shadowsocks", method=method.lower(), password=password,
+    )
+
+
+def parse_link(raw):
+    """Any supported share link -> a node; the scheme picks the parser."""
+    text = str(raw or "").strip()
+    scheme = text.partition("://")[0].strip().lower() if "://" in text else ""
+    if scheme == "vless":
+        return parse_uri(text)
+    if scheme == "trojan":
+        return parse_trojan_uri(text)
+    if scheme == "vmess":
+        return parse_vmess_uri(text)
+    if scheme == "ss":
+        return parse_ss_uri(text)
+    return None
 
 
 def _singbox_outbound(obj):
@@ -699,22 +1044,23 @@ def _xray_transport_fields(stream):
 
 
 def _xray_outbound(obj):
-    """One Xray `outbounds[]` item -> zero or more `VlessNode`s.
+    """One Xray `outbounds[]` item -> zero or more nodes.
 
     Handles both shapes a 3x-ui JSON subscription uses: the flat
     `settings: {address, port, id, ...}` form and the stock
-    `settings.vnext[].users[]` form. Anything that is not VLESS is ignored:
-    the helper only registers the VLESS outbound, and pretending to import a
-    protocol it cannot start is worse than counting it as skipped.
+    `settings.vnext[].users[]` / `settings.servers[]` forms. Protocols the
+    shipped helper does not register are left to `parse_xray_json`, which
+    counts them as skipped instead of writing a profile that cannot start.
     """
     if not isinstance(obj, dict):
         return []
-    if str(obj.get("protocol") or "").strip().lower() != "vless":
+    protocol = str(obj.get("protocol") or "").strip().lower()
+    if protocol not in PROTOCOLS:
         return []
     settings = obj.get("settings") if isinstance(obj.get("settings"), dict) else {}
     stream = obj.get("streamSettings") if isinstance(obj.get("streamSettings"), dict) else {}
     tls = _xray_tls_fields(stream)
-    network, path, host, service, mode, header_type, extra = _xray_transport_fields(stream)
+    network, path, transport_host, service, mode, header_type, extra = _xray_transport_fields(stream)
     if tls["mldsa65_verify"]:
         extra["pqv"] = tls["mldsa65_verify"]
     if tls["ech"]:
@@ -728,35 +1074,44 @@ def _xray_outbound(obj):
             tls["pcs"], (list, tuple)) else str(tls["pcs"])
 
     servers = []
-    vnext = settings.get("vnext")
-    if isinstance(vnext, list):
-        for entry in vnext:
-            if not isinstance(entry, dict):
-                continue
-            address = str(entry.get("address") or "").strip()
-            users = entry.get("users") if isinstance(entry.get("users"), list) else [entry]
-            for user in users:
-                if isinstance(user, dict):
-                    servers.append((address, entry.get("port"), user, entry))
-    elif settings.get("address") and settings.get("id"):
-        servers.append((str(settings.get("address") or "").strip(), settings.get("port"),
-                        settings, settings))
+    if protocol in ("vless", "vmess"):
+        vnext = settings.get("vnext")
+        if isinstance(vnext, list):
+            for entry in vnext:
+                if not isinstance(entry, dict):
+                    continue
+                address = str(entry.get("address") or "").strip()
+                users = entry.get("users") if isinstance(entry.get("users"), list) else [entry]
+                for user in users:
+                    if isinstance(user, dict):
+                        servers.append((address, entry.get("port"), user, entry))
+        elif settings.get("address") and settings.get("id"):
+            servers.append((str(settings.get("address") or "").strip(), settings.get("port"),
+                            settings, settings))
+    else:
+        entries = settings.get("servers")
+        if isinstance(entries, list):
+            for entry in entries:
+                if isinstance(entry, dict):
+                    servers.append((str(entry.get("address") or "").strip(),
+                                    entry.get("port"), entry, entry))
+        elif settings.get("address"):
+            servers.append((str(settings.get("address") or "").strip(), settings.get("port"),
+                            settings, settings))
 
     nodes = []
     for address, raw_port, user, parent in servers:
-        uuid = str(user.get("id") or user.get("uuid") or "").strip()
         try:
             port = int(raw_port)
         except (TypeError, ValueError):
             continue
-        if not address or not uuid or not (1 <= port <= 65535):
+        if not address or not (1 <= port <= 65535):
             continue
         remark = str(obj.get("remark") or parent.get("remark") or "").strip()
         if not remark:
             tag = str(obj.get("tag") or "").strip()
             remark = "" if tag.lower() in ("proxy", "direct", "block", "outbound") else tag
-        nodes.append(VlessNode(
-            uuid=uuid,
+        common = dict(
             host=address,
             port=port,
             remark=remark,
@@ -770,14 +1125,49 @@ def _xray_outbound(obj):
             reality_spider_x=tls["reality_spider_x"],
             network=network,
             path=path,
-            host_header=host,
+            host_header=transport_host,
             service_name=service,
             mode=mode,
             header_type=header_type,
-            flow=str(user.get("flow") or parent.get("flow") or "").strip(),
-            encryption=str(user.get("encryption") or parent.get("encryption") or "none").strip(),
             extra=extra,
-        ))
+            protocol=protocol,
+        )
+        if protocol == "vless" or protocol == "vmess":
+            uuid = str(user.get("id") or user.get("uuid") or "").strip()
+            if not uuid:
+                continue
+            common["uuid"] = uuid
+            if protocol == "vless":
+                common["flow"] = str(user.get("flow") or parent.get("flow") or "").strip()
+                common["encryption"] = str(
+                    user.get("encryption") or parent.get("encryption") or "none").strip()
+            else:
+                common["method"] = str(
+                    user.get("security") or user.get("scy") or parent.get("security") or "auto").strip()
+                try:
+                    common["alter_id"] = int(user.get("alterId") or user.get("aid") or 0)
+                except (TypeError, ValueError):
+                    common["alter_id"] = 0
+        elif protocol == "trojan":
+            password = str(user.get("password") or "").strip()
+            if not password:
+                continue
+            common["password"] = password
+            # Flow for Trojan was removed from Xray 26.x; see parse_trojan_uri.
+        else:  # shadowsocks
+            if user.get("plugin") or parent.get("plugin"):
+                # Xray's Shadowsocks outbound has no SIP003 plugin support; a
+                # node with `plugin=obfs-local` would connect to the wrong port
+                # and look dead, so skip it rather than writing it.
+                continue
+            method = str(user.get("method") or "").strip()
+            password = str(user.get("password") or "").strip()
+            if not method or not password:
+                continue
+            common["method"] = method
+            common["password"] = password
+        common.setdefault("uuid", "")
+        nodes.append(VlessNode(**common))
     return nodes
 
 
@@ -829,7 +1219,7 @@ def parse_xray_json(raw, stats=None):
                 # The local direct/block/DNS outbounds every Xray config carries
                 # are not "another protocol" the subscription offered.
                 continue
-            if protocol != "vless":
+            if protocol not in PROTOCOLS:
                 if isinstance(stats, dict):
                     stats["other_scheme"] = max(0, stats.get("other_scheme", 0)) + 1
                 continue
@@ -905,17 +1295,17 @@ def parse_many(raw, limit=MAX_NODES):
     """A whole subscription body -> (`nodes`, `stats`).
 
     `stats` counts what was skipped and why, because "imported 0 of 4000" with no reason is the
-    report that wastes an evening: `total` lines seen, `vless` links found, `other_scheme`
-    (vmess/ss/trojan/hysteria2 — not supported here), `bad` (a vless link that would not parse),
-    `duplicate`, and `truncated` when `limit` cut the list.
+    report that wastes an evening: `total` lines seen, `vless` links found, `trojan`, `vmess`,
+    `shadowsocks`, `other_scheme` (hysteria2/tuic — not supported by the Xray client),
+    `bad` (a link that would not parse), `duplicate`, and `truncated` when `limit` cut the list.
 
     Metadata comment lines are skipped: barry-far's list opens with `#profile-title:`,
     `#profile-update-interval:`, `#subscription-userinfo:`, `#support-url:` and
     `#profile-web-page-url:`, and a naive parser reports five failures on every refresh.
     """
     text = decode_subscription_body(raw)
-    stats = {"total": 0, "vless": 0, "other_scheme": 0, "bad": 0, "duplicate": 0,
-             "truncated": 0, "xray_json": 0}
+    stats = {"total": 0, "vless": 0, "trojan": 0, "vmess": 0, "shadowsocks": 0,
+             "other_scheme": 0, "bad": 0, "duplicate": 0, "truncated": 0, "xray_json": 0}
 
     nodes = []
     seen = set()
@@ -945,11 +1335,12 @@ def parse_many(raw, limit=MAX_NODES):
     # `settings`), not sing-box (`type: vless` + `server`). Without this pass a
     # panel URL that the window promises to understand imported zero nodes.
     for node in parse_xray_json(text, stats=stats):
-        stats["vless"] += 1
+        key = "shadowsocks" if node.protocol == "shadowsocks" else node.protocol
+        stats[key] = stats.get(key, 0) + 1
         stats["xray_json"] += 1
         take(node)
     if nodes:
-        stats["total"] = stats["vless"]
+        stats["total"] = sum(stats[key] for key in ("vless", "trojan", "vmess", "shadowsocks"))
         return nodes, stats
     if text.lstrip()[:1] in ("{", "["):
         # A JSON body is not a line list. Counting each `"key": value` line as a
@@ -961,14 +1352,16 @@ def parse_many(raw, limit=MAX_NODES):
         if not line or line.startswith("#") or line.startswith("//"):
             continue
         stats["total"] += 1
-        if line[:len(SCHEME)].lower() != SCHEME:
+        scheme = line.partition("://")[0].strip().lower() if "://" in line else ""
+        if scheme not in ("vless", "trojan", "vmess", "ss"):
             if "://" in line:
                 stats["other_scheme"] += 1
             else:
                 stats["bad"] += 1
             continue
-        stats["vless"] += 1
-        node = parse_uri(line)
+        key = "shadowsocks" if scheme == "ss" else scheme
+        stats[key] += 1
+        node = parse_link(line)
         if node is None:
             stats["bad"] += 1
             continue
@@ -980,8 +1373,15 @@ def validate(node):
     """A human-readable reason the node will not work, or "" when it looks usable."""
     if node is None:
         return "Профиль не разобран"
-    if not _is_acceptable_user_id(node.uuid):
-        return "Идентификатор пользователя не подходит: %s" % node.uuid
+    if node.protocol in ("vless", "vmess"):
+        if not _is_acceptable_user_id(node.uuid):
+            return "Идентификатор пользователя не подходит: %s" % node.uuid
+    elif node.protocol == "trojan":
+        if not node.password:
+            return "Trojan без пароля — подключение невозможно"
+    elif node.protocol == "shadowsocks":
+        if not node.method or not node.password:
+            return "Shadowsocks без метода или пароля — подключение невозможно"
     if node.network not in NETWORKS:
         return "Неизвестный транспорт type=%s" % node.network
     if node.security not in SECURITIES:
@@ -1003,6 +1403,8 @@ def validate(node):
         if _base64url_byte_length(node.reality_public_key) != 32:
             return "публичный ключ (pbk) должен быть 32-байтным X25519 в base64url"
     if node.flow:
+        if node.protocol != "vless":
+            return "flow=%s поддерживается только VLESS" % node.flow
         if node.flow.strip().lower() not in FLOWS:
             return "ядро не знает flow=%s" % node.flow
         # Vision works on the TLS record layer: it needs a security layer, and it needs a transport
@@ -1012,9 +1414,10 @@ def validate(node):
             return "flow=%s требует security=tls или reality" % node.flow
         if node.network not in REALITY_NETWORKS:
             return "flow=%s не работает с type=%s" % (node.flow, node.network)
-    encryption = node.encryption
-    if encryption and encryption.lower() != "none" and not encryption.lower().startswith("mlkem768"):
-        return "неизвестное значение encryption=%s" % encryption
+    if node.protocol == "vless":
+        encryption = node.encryption
+        if encryption and encryption.lower() != "none" and not encryption.lower().startswith("mlkem768"):
+            return "неизвестное значение encryption=%s" % encryption
     # Пин (pcs) выписан на конкретный край CDN. Если SNI и Host расходятся, edge отдаст
     # сертификат, который не совпадёт ни с пином, ни с SNI — узел не поднимется никогда.
     # Замерено 2026-11-01: sni=firefox.com, host=…fastly.net, пин от третьего сертификата;
@@ -1269,16 +1672,43 @@ def build_xray_config(node, socks_port, socks_host="127.0.0.1", log_level="warni
             http_inbound["sniffing"] = _sniffing()
         inbounds.append(http_inbound)
 
-    user = {"id": node.uuid, "encryption": node.encryption or "none", "level": 0}
-    if node.flow:
-        user["flow"] = node.flow
-
-    outbound = {
-        "tag": "proxy",
-        "protocol": "vless",
-        "settings": {"vnext": [{"address": node.host, "port": int(node.port), "users": [user]}]},
-        "streamSettings": _stream_settings(node),
-    }
+    if node.protocol == "vless":
+        user = {"id": node.uuid, "encryption": node.encryption or "none", "level": 0}
+        if node.flow:
+            user["flow"] = node.flow
+        outbound = {
+            "tag": "proxy",
+            "protocol": "vless",
+            "settings": {"vnext": [{"address": node.host, "port": int(node.port),
+                                    "users": [user]}]},
+            "streamSettings": _stream_settings(node),
+        }
+    elif node.protocol == "trojan":
+        outbound = {
+            "tag": "proxy",
+            "protocol": "trojan",
+            "settings": {"servers": [{"address": node.host, "port": int(node.port),
+                                      "password": node.password}]},
+            "streamSettings": _stream_settings(node),
+        }
+    elif node.protocol == "vmess":
+        user = {"id": node.uuid, "security": node.method or "auto", "level": 0}
+        outbound = {
+            "tag": "proxy",
+            "protocol": "vmess",
+            "settings": {"vnext": [{"address": node.host, "port": int(node.port),
+                                    "users": [user]}]},
+            "streamSettings": _stream_settings(node),
+        }
+    elif node.protocol == "shadowsocks":
+        outbound = {
+            "tag": "proxy",
+            "protocol": "shadowsocks",
+            "settings": {"servers": [{"address": node.host, "port": int(node.port),
+                                      "method": node.method, "password": node.password}]},
+        }
+    else:
+        raise ValueError("unsupported protocol: %s" % node.protocol)
 
     return {
         "log": {"loglevel": str(log_level or "warning")},

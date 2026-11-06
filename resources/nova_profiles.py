@@ -178,7 +178,11 @@ _RUNTIME_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 # spaces are all legal inside it -- the fragment holds the node name ("Test NL", flags and
 # all) and `extra=` holds JSON. Cutting at whitespace truncated exactly those names. A
 # second link on the same line ends the first, so a pasted pair is two candidates.
-VLESS_URI_RE = re.compile(r"(?i)vless://(?:(?!vless://)[^\r\n])+")
+# Every share scheme the bundled Xray helper can start. `ss` is last but not
+# least: the negative lookahead stops one link from swallowing the next on a
+# pasted line.
+XRAY_URI_RE = re.compile(
+    r"(?i)(?:vless|trojan|vmess|ss)://(?:(?!(?:vless|trojan|vmess|ss)://)[^\r\n])+")
 
 # --------------------------------------------------------------------------------------------
 # Issue texts (user-visible, Russian)
@@ -220,8 +224,8 @@ ISSUE_TEXT_TOO_LARGE = "Текст слишком большой для импо
 ISSUE_UNKNOWN_KIND = "Неизвестный вид профиля"
 
 ISSUE_VLESS_NOT_JSON = "Файл не разбирается как JSON"
-ISSUE_VLESS_NO_URI = "В файле нет ссылки vless://"
-ISSUE_VLESS_BAD_URI = "Ссылка vless:// не разбирается"
+ISSUE_VLESS_NO_URI = "В файле нет ссылки Xray (vless/trojan/vmess/ss)"
+ISSUE_VLESS_BAD_URI = "Ссылка Xray не разбирается"
 # Followed by ": <reason>" from nova_vless.validate.
 ISSUE_VLESS_UNUSABLE = "Узел VLESS не заработает"
 
@@ -1001,7 +1005,7 @@ def parse_vless_profile(obj):
     uri = obj.get("uri") or obj.get("link") or ""
     if not str(uri).strip():
         return None, [ISSUE_VLESS_NO_URI]
-    node = _nova_vless.parse_uri(uri)
+    node = _nova_vless.parse_link(uri)
     if node is None:
         return None, [ISSUE_VLESS_BAD_URI]
     reason = _nova_vless.validate(node)
@@ -1082,12 +1086,14 @@ def _conf_file_info(path):
 
 
 def _looks_like_vless_profile(obj):
-    """A profile file written by `vless_profile_payload`, or anything else carrying a vless link."""
+    """A profile file written by `vless_profile_payload`, or anything else carrying an Xray link."""
     if not isinstance(obj, dict):
         return False
-    if str(obj.get("type") or "").strip().lower() == "vless":
+    if str(obj.get("type") or "").strip().lower() in ("vless", "vmess", "trojan", "shadowsocks"):
         return True
-    return bool(str(obj.get("uri") or "").strip().lower().startswith("vless://"))
+    uri = str(obj.get("uri") or "").strip().lower()
+    return any(uri.startswith(scheme + "://")
+               for scheme in ("vless", "vmess", "trojan", "ss"))
 
 
 def _vless_file_info(path, obj, encoding_issue):
@@ -2095,7 +2101,7 @@ def _invalid_candidate(name, issues, kind=KIND_AWG):
 
 
 def _vless_candidate(uri, stem=""):
-    """One `vless://` link -> an import candidate of kind VLESS.
+    """One Xray share link -> an import candidate of kind VLESS.
 
     The name comes from the link's own `#remark` when it has one, because that is what the owner
     reads in the window; a subscription's remarks carry the country and the provider. It falls
@@ -2104,7 +2110,7 @@ def _vless_candidate(uri, stem=""):
     """
     if _nova_vless is None:
         return _invalid_candidate(stem or "VLESS", [ISSUE_VLESS_BAD_URI], kind=KIND_VLESS)
-    node = _nova_vless.parse_uri(uri)
+    node = _nova_vless.parse_link(uri)
     if node is None:
         return _invalid_candidate(stem or "VLESS", [ISSUE_VLESS_BAD_URI], kind=KIND_VLESS)
     reason = _nova_vless.validate(node)
@@ -2296,9 +2302,14 @@ def parse_import_text(text, source_name=""):
 
     found = []
     consumed = []
-    # vless:// is scanned first: its query may carry JSON (an `extra=` parameter does) and the
-    # MASQUE scan below would otherwise eat half the link starting at that brace.
-    for match in re.finditer(VLESS_URI_RE, text):
+    # Xray share links are scanned first: a VLESS query may carry JSON (an `extra=` parameter does)
+    # and the MASQUE scan below would otherwise eat half the link starting at that brace. The one
+    # regex covers vless, trojan, vmess and ss; each link's own parser decides whether it is usable.
+    for match in re.finditer(XRAY_URI_RE, text):
+        if any(start <= match.start() < end for start, end in consumed):
+            # A link inside another link's query (`extra={"url":"ss://…"}`) is
+            # part of the outer node, not a second subscription entry.
+            continue
         # Trailing quotes and brackets come from links pasted out of JSON, HTML or a chat message.
         link = match.group(0).rstrip().rstrip("\"'<>),;")
         found.append((match.start(), _vless_candidate(link, stem)))

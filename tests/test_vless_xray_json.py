@@ -119,10 +119,19 @@ class XrayJsonTests(unittest.TestCase):
         nodes = nova_vless.parse_xray_json(json.dumps([flat_config(), reality_config()]))
         self.assertEqual(2, len(nodes))
 
-    def test_other_protocols_are_counted_not_imported(self):
+    def test_trojan_json_is_imported(self):
         document = {"outbounds": [{"tag": "proxy", "protocol": "trojan",
                                    "settings": {"address": "t.example", "port": 443,
                                                 "password": "x"}}]}
+        nodes, stats = nova_vless.parse_many(json.dumps(document))
+        self.assertEqual(1, len(nodes))
+        self.assertEqual("trojan", nodes[0].protocol)
+        self.assertEqual(1, stats["trojan"])
+        self.assertEqual(0, stats["other_scheme"])
+
+    def test_unknown_protocol_is_counted_not_imported(self):
+        document = {"outbounds": [{"tag": "proxy", "protocol": "hysteria2",
+                                   "settings": {"address": "h.example", "port": 443}}]}
         nodes, stats = nova_vless.parse_many(json.dumps(document))
         self.assertEqual(0, len(nodes))
         self.assertEqual(1, stats["other_scheme"])

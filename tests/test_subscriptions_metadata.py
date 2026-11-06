@@ -111,7 +111,7 @@ class RefreshMetadataTests(unittest.TestCase):
         self.assertEqual("Body provider", after["provider"]["title"])
         self.assertEqual(0, after["provider"]["userinfo"]["total"])
         self.assertEqual(24, after["provider"]["update_interval_hours"])
-        self.assertEqual("в ответе нет ссылок vless://", after["last_status"])
+        self.assertEqual("в ответе нет Xray-ссылок (vless/trojan/vmess/ss)", after["last_status"])
 
     def test_headers_win_over_body(self):
         base = tempfile.mkdtemp(prefix="kaliopa-subs-")

@@ -179,7 +179,8 @@ def _clean_stats(value):
     if not isinstance(value, dict):
         return {}
     out = {}
-    for key in ("total", "vless", "other_scheme", "bad", "duplicate", "truncated", "xray_json"):
+    for key in ("total", "vless", "trojan", "vmess", "shadowsocks", "other_scheme", "bad",
+                "duplicate", "truncated", "xray_json"):
         number = max(0, _as_int(value.get(key), 0))
         if number:
             out[key] = number
@@ -725,12 +726,12 @@ def refresh(base_dir, record, *, proxies=(), direct=True, log=None, fetcher=None
     if record["kind"] == KIND_VLESS:
         skipped = max(0, _as_int(stats.get("other_scheme"), 0))
         if skipped:
-            record["last_status"] = "нет vless://; пропущено %d чужих ссылок" % skipped
-            say("[Подписки] «%s»: нет vless://, пропущено %d ссылок других протоколов (%d КБ)." %
+            record["last_status"] = "нет Xray-ссылок; пропущено %d чужих ссылок" % skipped
+            say("[Подписки] «%s»: нет Xray-ссылок, пропущено %d ссылок других протоколов (%d КБ)." %
                 (title, skipped, result.bytes // 1024))
         else:
-            record["last_status"] = "в ответе нет ссылок vless://"
-            say("[Подписки] «%s»: в ответе нет ссылок vless:// (%d КБ)." %
+            record["last_status"] = "в ответе нет Xray-ссылок (vless/trojan/vmess/ss)"
+            say("[Подписки] «%s»: в ответе нет Xray-ссылок (%d КБ)." %
                 (title, result.bytes // 1024))
         return "empty", record, stats
 
