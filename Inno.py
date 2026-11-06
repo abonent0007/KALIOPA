@@ -185,6 +185,15 @@ USER_OVERRIDE_HEADER_DEFAULTS = {
     ("ip", "u_main.txt"): "# user main VPN override IPs/CIDR\n",
     ("ip", "u_second.txt"): "# user second VPN override IPs/CIDR\n",
 }
+# A fresh u_direct gets these public Russian domains. They are not private
+# owner data, so shipping them does not need the source file's live contents
+# (which sanitize_user_override_files deliberately strips).
+USER_DIRECT_DEFAULTS = (
+    "vk.com", "yandex.com", "yandex.net", "yastatic.net", "userapi.com", "vk.me",
+    "mycdn.me", "rt.com", "tass.com", "sputniknews.com", "avito.com",
+    "wildberries.com", "qiwi.com", "vk-cdn.net", "sberbank.com", "vtb.com",
+    "alfabank.com", "yoomoney.com",
+)
 
 BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
 TARGET_BUILD_CPUS = 7
@@ -572,6 +581,14 @@ def sanitize_user_override_files(staging_dir: Path) -> None:
         if not header:
             header = fallback_header
         target.write_text(header, encoding="utf-8")
+        if (folder_name, file_name) == ("list", "u_direct.txt"):
+            # Keep the owner lists private, but seed the public always-direct
+            # domains every new install needs for Russian services on global
+            # TLDs. Existing installations are never overwritten by Inno.
+            target.write_text(
+                header.rstrip("\r\n") + "\n" + "\n".join(USER_DIRECT_DEFAULTS) + "\n",
+                encoding="utf-8",
+            )
 
 
 def stage_routing_settings(src: Path, dst: Path) -> None:

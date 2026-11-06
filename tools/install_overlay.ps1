@@ -67,7 +67,7 @@ Write-Host "[overlay] target: $Target"
 Stop-NovaGracefully
 
 $lockedNames = @("Nova.exe", "libcrypto-3.dll", "libssl-3.dll", "select.pyd", "_ssl.pyd", "python314.dll")
-$xf = $lockedNames | ForEach-Object { "/XF"; $_ }
+$xf = ($lockedNames + @("u_*.txt")) | ForEach-Object { "/XF"; $_ }
 
 $robocopyArgs = @($Source, $Target, "/E", "/R:2", "/W:1", "/NFL", "/NDL", "/NJH", "/NJS", "/NP") + $xf
 & robocopy @robocopyArgs | Out-Null

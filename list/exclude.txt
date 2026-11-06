@@ -121,3 +121,16 @@ s3.dualstack.ap-northeast-2.amazonaws.com
 s3.dualstack.ap-south-1.amazonaws.com
 s3.dualstack.ap-east-1.amazonaws.com
 s3.dualstack.me-central-1.amazonaws.com
+avito.com
+wildberries.com
+qiwi.com
+yandex.com
+mycdn.me
+vk-cdn.net
+sberbank.com
+vtb.com
+alfabank.com
+rt.com
+sputniknews.com
+yoomoney.com
+tass.com
