@@ -315,6 +315,7 @@ import nova_tk_clipboard
 import nova_warp_generator
 import nova_warp_custom_settings
 import nova_dns_doh
+import nova_tooltips
 import nova_proton
 import nova_captcha_window
 import nova_dns_endpoints
@@ -30800,6 +30801,10 @@ function FindProxyForURLEx(url, host) {{
                 canvas.tag_bind(item, "<Button-1>", self._on_click)
                 canvas.tag_bind(item, "<Enter>", self._on_enter)
                 canvas.tag_bind(item, "<Leave>", self._on_leave)
+
+        def set_tooltip(self, text):
+            for item in (self.bg_id, self.outline_id, self.text_id):
+                nova_tooltips.attach_canvas_item(self.canvas, item, text, raw=True)
         
         def _update_image(self, color):
             # Используем градиентную заливку с размытием краев (как у меток)
@@ -31022,6 +31027,9 @@ function FindProxyForURLEx(url, host) {{
             f_size = font[1]
             f_weight = "bold" if "bold" in font else "normal"
             self.tk_font = tkfont.Font(family=f_family, size=f_size, weight=f_weight)
+
+        def set_tooltip(self, text):
+            nova_tooltips.attach_canvas_item(self.canvas, self.bg_id, text, raw=True)
 
         def _clear_text(self):
             for item in self.text_items:
@@ -31393,6 +31401,10 @@ function FindProxyForURLEx(url, host) {{
             self.canvas.tag_bind(self.text_id, "<ButtonRelease-1>", self._on_release)
             self.canvas.tag_bind(self.text_id, "<Enter>", lambda e: self._set_hover(True))
             self.canvas.tag_bind(self.text_id, "<Leave>", lambda e: self._set_hover(False))
+
+        def set_tooltip(self, text):
+            for item in (self.text_id, self.bg_id):
+                nova_tooltips.attach_canvas_item(self.canvas, item, text, raw=True)
 
         def _on_press(self, event=None):
             self._pressed = True
@@ -32006,6 +32018,7 @@ function FindProxyForURLEx(url, host) {{
         
         btn_toggle = RoundedButton(main_canvas, bg_center_x, bg_center_y + _px(10), _px(160), _px(40), _px(20), COLOR_BLUEBERRY_YOGURT, "ПОДКЛЮЧИТЬ", toggle_service,
                                    font=("Segoe UI", _px(10), "bold"))
+        btn_toggle.set_tooltip("Главный тумблер: подключить или отключить VPN Nova.")
         
         # Style for Log Button
         log_fg = "#777777"
@@ -32111,7 +32124,7 @@ function FindProxyForURLEx(url, host) {{
         }
 
         class PopupPillButton(tk.Canvas):
-            def __init__(self, master, text, command, width=68, height=28):
+            def __init__(self, master, text, command, width=68, height=28, tooltip=None):
                 super().__init__(
                     master,
                     width=width,
@@ -32135,6 +32148,7 @@ function FindProxyForURLEx(url, host) {{
                 self.bind("<Enter>", self._on_enter)
                 self.bind("<Leave>", self._on_leave)
                 self.bind("<Button-1>", self._on_click)
+                nova_tooltips.attach_widget(self, tooltip or text)
                 self._render()
 
             def set_selected(self, selected):
@@ -32431,6 +32445,7 @@ function FindProxyForURLEx(url, host) {{
                 popup_h = existing.winfo_reqheight()
                 pos_x, pos_y = _compute_settings_popup_geometry(popup_w, popup_h)
                 existing.geometry(f"{popup_w}x{popup_h}+{pos_x}+{pos_y}")
+                nova_tooltips.attach_tree(existing)
                 existing.deiconify()
                 _raise_settings_window(existing)
             except:
@@ -32444,6 +32459,7 @@ function FindProxyForURLEx(url, host) {{
                 popup_h = win.winfo_reqheight()
                 pos_x, pos_y = _compute_settings_popup_geometry(popup_w, popup_h)
                 win.geometry(f"{popup_w}x{popup_h}+{pos_x}+{pos_y}")
+                nova_tooltips.attach_tree(win)
                 win.deiconify()
                 _raise_settings_window(win)
             except:
@@ -33646,6 +33662,7 @@ function FindProxyForURLEx(url, host) {{
             bg_color=log_bg,
         )
         btn_settings.set_visible(False)
+        btn_settings.set_tooltip("Настройки маршрутизации: VPN-слоты, приложения, списки доменов.")
 
         btn_profiles = CanvasButton(
             main_canvas,
@@ -33659,6 +33676,7 @@ function FindProxyForURLEx(url, host) {{
             bg_color=log_bg,
         )
         btn_profiles.set_visible(False)
+        btn_profiles.set_tooltip("Профили: серверы, подписки, генератор WARP и точки входа.")
 
         INDICATOR_WARP = "#8FD8FF"
         INDICATOR_EU = "#D8B6BF"
@@ -33680,6 +33698,9 @@ function FindProxyForURLEx(url, host) {{
         region_indicator_pill.set_regions([])
         # Сегменты «основной» и «дополнительный» кликабельны: меню быстрого переключения.
         region_indicator_pill.set_click_handler(open_vpn_slot_menu)
+        region_indicator_pill.set_tooltip(
+            "Активный VPN: основной слот (WARP/MASQUE/VLESS) и дополнительный "
+            "(Opera/Tor). Нажмите, чтобы переключить.")
         indicator_log_state = {"shown": None}
 
         # Строкой выше регионов: градиент вордмарка dns-ai.ru значит, что системный
@@ -33697,6 +33718,9 @@ function FindProxyForURLEx(url, host) {{
             bg_color=log_bg,
         )
         dns_ai_indicator_pill.set_regions([])
+        dns_ai_indicator_pill.set_tooltip(
+            "DNS-AI: градиент — системный DNS идёт через DNS-AI; серый — разблокировка "
+            "ИИ включена, подмены сейчас нет; метки нет — разблокировка выключена.")
 
         def _get_opera_region_indicator_label():
             """The secondary slot's pill text: EU / US (Opera, maybe «/WARP») or TOR."""

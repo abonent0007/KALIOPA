@@ -40,6 +40,8 @@ import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 
+import nova_tooltips
+
 __all__ = [
     "open_profiles_window", "toggle_profiles_window", "close_profiles_window", "get_profiles_window",
     "ProfilesWindow", "ImportPreview", "CustomWarpSettings", "FallbackPillButton", "ThemedScrollbar",
@@ -1242,6 +1244,10 @@ class ProfilesWindow:
                 except tk.TclError:
                     pass  # already gone together with the interpreter
             raise
+        try:
+            nova_tooltips.attach_tree(self.win)
+        except Exception:
+            pass
 
     # -- building ------------------------------------------------------------------------
 
@@ -3226,6 +3232,7 @@ class ImportPreview:
         self._place()
         top.deiconify()
         apply_title_bar_theme(top, view.dark)
+        nova_tooltips.attach_tree(top)
         try:
             top.lift()
             self.listbox.focus_set()
@@ -3480,6 +3487,7 @@ class CustomWarpSettings:
         apply_title_bar_theme(top, self.view.dark)
         self._refresh_pills()
         self._refresh_hint()
+        nova_tooltips.attach_tree(top)
 
     def _entry(self, master, width):
         t = self.view.theme

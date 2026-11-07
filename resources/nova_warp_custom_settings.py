@@ -38,6 +38,7 @@ __all__ = [
 import json
 import os
 import re
+from typing import Any
 
 FILENAME = "warp-custom-settings.json"
 TEMP_DIRNAME = "temp"
@@ -69,7 +70,7 @@ DEFAULTS = {
     "sni_attempts": 3,
 }
 
-PRESETS = {
+PRESETS: dict[str, dict[str, Any]] = {
     "optimal": {
         "title": "Оптимальный",
         "hint": "Проверено живыми прогонами: MTU 1280, два DNS, случайное прикрытие, "

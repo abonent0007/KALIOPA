@@ -11,10 +11,12 @@
 """
 
 import os
+import socket
+import subprocess
+import sys
 import threading
 
 import nova_dns_adapters
-import nova_doh_resolver
 
 DOH_LISTEN_IP = "127.0.0.1"
 try:
@@ -22,8 +24,70 @@ try:
 except ValueError:
     DOH_LISTEN_PORT = 53
 
+DOH_URL = "https://dns.dns-ai.ru/dns-query"
+
 _lock = threading.Lock()
 _resolver = None
+
+
+def _nova_go_path():
+    """nova-go.exe рядом с приложением: resources\\bin (сборка) или bin (исходники)."""
+    base = os.path.dirname(os.path.abspath(sys.argv[0] or "."))
+    for rel in (("resources", "bin", "nova-go.exe"), ("bin", "nova-go.exe")):
+        path = os.path.join(base, *rel)
+        if os.path.exists(path):
+            return path
+    return ""
+
+
+class _GoResolver:
+    """DoH-резолвер на `nova-go dns doh`: HTTP/2 даёт Go, зависимости httpx/h2 не нужны."""
+
+    def __init__(self, port=DOH_LISTEN_PORT, upstream=None, proxy=None):
+        self.port = int(port)
+        self.upstream = upstream or ""
+        self.proxy = proxy or ""
+        self._process = None
+        self._log = None
+
+    def start(self):
+        helper = _nova_go_path()
+        if not helper:
+            raise RuntimeError("nova-go.exe не найден")
+        args = [helper, "dns", "doh",
+                "--listen", f"{DOH_LISTEN_IP}:{self.port}",
+                "--upstream", DOH_URL,
+                "--timeout", "5s",
+                "--parent-pid", str(os.getpid())]
+        if self.upstream:
+            args += ["--fallback", self.upstream]
+        if self.proxy:
+            args += ["--proxy", self.proxy]
+        self._log = open(os.devnull, "wb")
+        self._process = subprocess.Popen(
+            args, stdout=subprocess.DEVNULL, stderr=self._log, stdin=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+        )
+        if self._process.poll() is not None:
+            raise RuntimeError("nova-go dns doh сразу завершился")
+
+    def stop(self):
+        proc, self._process = self._process, None
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=3)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        if self._log is not None:
+            try:
+                self._log.close()
+            except Exception:
+                pass
+            self._log = None
 
 
 def enabled():
@@ -35,6 +99,17 @@ def enabled():
 
 def snapshot_path(temp_dir):
     return os.path.join(str(temp_dir), nova_dns_adapters.SNAPSHOT_FILENAME)
+
+
+def _proxy_url():
+    """Живой слот Nova: WARP SOCKS 1370, затем Opera HTTP 1371. Без них DoH рвётся DPI."""
+    for port, scheme in ((1370, "socks5"), (1371, "http")):
+        try:
+            with socket.create_connection((DOH_LISTEN_IP, port), timeout=0.3):
+                return f"{scheme}://{DOH_LISTEN_IP}:{port}"
+        except OSError:
+            continue
+    return ""
 
 
 def _fallback_upstream(rows):
@@ -65,8 +140,19 @@ def start(temp_dir, log=None, *, adapters=None, resolver_factory=None):
         except Exception as exc:
             say("[DoH] снимок DNS не сделан: %s" % exc)
             return False
-        factory = resolver_factory or nova_doh_resolver.DohResolver
+        factory = resolver_factory
+        if factory is None:
+            use_python = str(os.environ.get("NOVA_DOH_PY", "")).strip().lower() in {"1", "true", "yes", "on"}
+            if use_python:
+                # Старый путь на httpx остаётся для отладки: ему нужен пакет h2,
+                # которого нет в сборочном Python 3.14.
+                import nova_doh_resolver
+                factory = nova_doh_resolver.DohResolver
+            else:
+                factory = _GoResolver
         resolver = factory(upstream=_fallback_upstream(rows))
+        if isinstance(resolver, _GoResolver) and not resolver.proxy:
+            resolver.proxy = _proxy_url()
         try:
             resolver.start()
             adapters.apply(rows, DOH_LISTEN_IP)

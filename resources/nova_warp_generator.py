@@ -1088,10 +1088,13 @@ def generate(base_dir, nova_go_path, *, log, force=False, api_proxy=None, progre
 
 
 def _free_loopback_port() -> int:
-    """An ephemeral port for the throwaway probe instance."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
+    """An ephemeral port for the throwaway probe instance; 0 when the stack refuses."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            return int(sock.getsockname()[1])
+    except OSError:
+        return 0
 
 
 def _socks5_fetch_204(port: int, timeout: float = PROBE_HTTP_TIMEOUT_SEC) -> bool:
@@ -1146,6 +1149,8 @@ def _probe_config(text: str, base_dir: str, wireproxy_path: str,
     if not helper or not os.path.exists(helper):
         return True
     port = _free_loopback_port()
+    if not port:
+        return False
     workdir = tempfile.mkdtemp(prefix="nova-warp-probe-")
     cfg_path = os.path.join(workdir, "probe.conf")
     proc = None
@@ -1292,7 +1297,8 @@ def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress
             if verify:
                 _progress(progress, f"WARP: проверяю {candidate['host']}:{candidate['port']} "
                                     f"({attempts})", 0, 1)
-            candidate_text = build_warp_conf(identity, candidate["host"], candidate["port"],
+            candidate_text = build_warp_conf(identity, str(candidate["host"]),
+                                             int(str(candidate["port"])),
                                              junk_value, i1, dns=dns, mtu=mtu,
                                              keepalive=keepalive)
             if verify:
@@ -1339,6 +1345,7 @@ def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress
         return fail(f"не удалось записать профиль: {_os_error_text(exc)}")
 
     profile_id = f"{CUSTOM_GROUP}/{name}"
+    assert endpoint is not None  # set together with `text` above
     log(f"{LOG_PREFIX} custom: создан {profile_id} через {endpoint['host']}:{endpoint['port']}"
         + (f" (проверен за {attempts} попыт.)" if verify else "") + ".")
     summary.update({

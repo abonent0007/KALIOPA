@@ -38,6 +38,7 @@ import socket
 import subprocess
 import tempfile
 import time
+from typing import Any
 
 import nova_dns_probe
 
@@ -99,9 +100,12 @@ def running() -> bool:
 
 
 def query(name: str, qtype: int = 1, timeout: float = QUERY_TIMEOUT_SEC, query_fn=None) -> list | None:
-    """Resolve a name through the local stub."""
+    """Resolve a name through the local stub; any transport error is «нет ответа»."""
     fn = query_fn or nova_dns_probe.query
-    return fn(_listen_host, name, qtype, timeout)
+    try:
+        return fn(_listen_host, name, qtype, timeout)
+    except Exception:
+        return None
 
 
 def _stub_answers(timeout: float = START_TIMEOUT_SEC) -> bool:
@@ -146,25 +150,30 @@ def start(nova_go_path: str, log, base_dir: str = "", parent_pid: int = 0,
     if parent_pid:
         args += ["--parent-pid", str(int(parent_pid))]
     log_path = ""
-    handle = subprocess.DEVNULL
+    log_handle = None
+    stderr_target: Any = subprocess.DEVNULL
     try:
         if base_dir:
             temp_dir = os.path.join(base_dir, TEMP_DIRNAME)
             os.makedirs(temp_dir, exist_ok=True)
             log_path = os.path.join(temp_dir, "dns-doh.log")
-            handle = open(log_path, "w", encoding="utf-8", errors="ignore")
+            log_handle = open(log_path, "w", encoding="utf-8", errors="ignore")
+            stderr_target = log_handle
         _process = subprocess.Popen(
             args,
             stdout=subprocess.DEVNULL,
-            stderr=handle,
+            stderr=stderr_target,
             stdin=subprocess.DEVNULL,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
         )
     except OSError as exc:
-        if handle is not subprocess.DEVNULL:
-            handle.close()
+        if log_handle is not None:
+            log_handle.close()
         _process = None
         return False, f"не удалось запустить резолвер: {type(exc).__name__}"
+    finally:
+        if log_handle is not None:
+            log_handle.close()
     if not _stub_answers():
         reason = "резолвер не ответил за отведённое время"
         if log_path and os.path.exists(log_path):

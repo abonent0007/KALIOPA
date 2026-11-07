@@ -60,6 +60,11 @@ class StartGuardTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("не найден", reason)
 
+    def test_query_transport_errors_are_none(self):
+        def boom(*_args):
+            raise OSError("network down")
+        self.assertIsNone(doh.query("example.com", query_fn=boom))
+
     def test_an_occupied_port_is_not_fought_over(self):
         base = tempfile.mkdtemp(prefix="doh-start-")
         helper = pathlib.Path(base) / "nova-go.exe"
