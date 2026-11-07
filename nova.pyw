@@ -314,6 +314,7 @@ import nova_profile_rotation
 import nova_tk_clipboard
 import nova_warp_generator
 import nova_warp_custom_settings
+import nova_dns_doh
 import nova_proton
 import nova_captcha_window
 import nova_dns_endpoints
@@ -15554,6 +15555,82 @@ function FindProxyForURLEx(url, host) {{
                     log_func(f"[NRPT] {provider}: проксирует {n} из {total}")
         return support
 
+    _dns_doh_retry = {"running": False}
+
+    def _schedule_dns_doh_retry(log_func=None):
+        """Ждать туннель и повторить setup: на старте SOCKS 1370 может быть ещё закрыт."""
+        if _dns_doh_retry["running"]:
+            return
+        _dns_doh_retry["running"] = True
+
+        def _worker():
+            try:
+                for _attempt in range(12):
+                    if is_closing:
+                        return
+                    if nova_dns_doh.proxy_url():
+                        break
+                    time.sleep(10.0)
+                else:
+                    if log_func:
+                        log_func(f"{nova_dns_doh.LOG_PREFIX} слот так и не поднялся — "
+                                 f"DNS-разблокировка ждёт перезапуска.")
+                    return
+                if is_closing:
+                    return
+                if log_func:
+                    log_func(f"{nova_dns_doh.LOG_PREFIX} слот поднялся — повторяю настройку NRPT.")
+                setup_nrpt_dns_unblock(log_func=log_func)
+            except Exception:
+                pass
+            finally:
+                _dns_doh_retry["running"] = False
+
+        try:
+            threading.Thread(target=_worker, daemon=True, name="NovaDnsDohRetry").start()
+        except Exception:
+            _dns_doh_retry["running"] = False
+
+    def _nrpt_doh_support(log_func=None):
+        """Правила через локальный DoH-резолвер; {} — если поднять его не вышло.
+
+        Список имён кэшируется на сутки с подписью, включающей имена и апстрим:
+        замер стоит несколько секунд (по запросу на имя), а меняется редко.
+        Подстановка идёт через 127.0.0.1, поэтому правило и резолвер живут вместе:
+        если процесс упал, NRPT-правила снимутся при следующем же setup.
+        """
+        signature = nova_dns_probe.signature((("doh", (nova_dns_doh.UPSTREAM,)),),
+                                             NOVA_NRPT_NAMESPACES)
+        cached = nova_dns_doh.load_cache(get_base_dir(), signature)
+        if cached is not None:
+            if cached and log_func:
+                log_func(f"{nova_dns_doh.LOG_PREFIX} замер из кэша: {len(cached)} имён.")
+            return dict(cached)
+        if not nova_dns_doh.proxy_url():
+            # Старт идёт раньше туннеля: не тратим 12 секунд на заведомо мёртвый
+            # DoH и не пугаем журнал ошибкой. Повторим, когда слот поднимется.
+            if log_func:
+                log_func(f"{nova_dns_doh.LOG_PREFIX} слот ещё закрыт — настройка после подключения.")
+            _schedule_dns_doh_retry(log_func)
+            return {}
+        ok, reason = nova_dns_doh.start(
+            os.path.join(get_bin_dir(), "nova-go.exe"),
+            log_func,
+            get_base_dir(),
+            os.getpid(),
+        )
+        if not ok:
+            if log_func:
+                log_func(f"{nova_dns_doh.LOG_PREFIX} DoH-резолвер не поднят: {reason}.")
+            return {}
+        support = nova_dns_doh.supported_names(NOVA_NRPT_NAMESPACES)
+        if support:
+            nova_dns_doh.save_cache(get_base_dir(), signature, support)
+        if log_func:
+            log_func(f"{nova_dns_doh.LOG_PREFIX} DoH: {len(support)} имён получат правила "
+                     f"через 127.0.0.1.")
+        return support
+
     def setup_nrpt_dns_unblock(log_func=None):
         """Setup NRPT rules for AI DNS unblocking. Idempotent: skips if already applied.
 
@@ -15584,6 +15661,7 @@ function FindProxyForURLEx(url, host) {{
                     elif log_func:
                         log_func(f"[NRPT] {how}, правила не нужны.")
                     _nrpt_state["rules_applied"] = False
+                    nova_dns_doh.stop(log=log_func)
                     return True
 
                 support = _nrpt_support(log_func)
@@ -15595,6 +15673,26 @@ function FindProxyForURLEx(url, host) {{
                     if len(kept) != len(desired) and log_func:
                         log_func(f"[NRPT] ИИ-приложения идут через VPN: {len(desired) - len(kept)} имён без DNS-разблокировщика.")
                     desired = kept
+                # UDP/53 у dns-ai.ru нет — сервис живёт только по DoH. То, чего не
+                # закрыл UDP-каскад, добираем своим резолвером: он слушает 127.0.0.1:53
+                # и ходит в DoH через живой слот Nova, поэтому правило указывает на
+                # 127.0.0.1, а не на адреса провайдеров.
+                if len(desired) < len(NOVA_NRPT_NAMESPACES):
+                    doh_support = _nrpt_doh_support(log_func)
+                    if get_routing_app_mode("ai_apps") in VPN_ROUTE_MODES:
+                        doh_support = drop_family_names(doh_support, AI_APP_DOMAINS)
+                    for name, servers in doh_support.items():
+                        desired.setdefault(name, servers)
+                    if desired and not nova_dns_doh.running():
+                        ok, reason = nova_dns_doh.start(
+                            os.path.join(get_bin_dir(), "nova-go.exe"), log_func,
+                            get_base_dir(), os.getpid())
+                        if not ok:
+                            if log_func:
+                                log_func(f"{nova_dns_doh.LOG_PREFIX} резолвер не поднят "
+                                         f"повторно: {reason}.")
+                            _remove_nrpt_dns_unblock_unlocked(log_func=log_func, silent=True)
+                            return False
                 if not desired:
                     _remove_nrpt_dns_unblock_unlocked(log_func=log_func, silent=True)
                     if log_func:
@@ -15698,6 +15796,8 @@ function FindProxyForURLEx(url, host) {{
                 capture_output=True, timeout=10, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
             )
             _nrpt_state["rules_applied"] = False
+            # Правила на 127.0.0.1 без резолвера только ломают DNS: держим их вместе.
+            nova_dns_doh.stop(log=log_func if not silent else None)
             if log_func and not silent:
                 log_func("[NRPT] DNS-правила удалены.")
         except Exception as e:
