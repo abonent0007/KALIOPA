@@ -15566,22 +15566,21 @@ function FindProxyForURLEx(url, host) {{
 
         def _worker():
             try:
-                for _attempt in range(12):
+                for _attempt in range(6):
                     if is_closing:
                         return
-                    if nova_dns_doh.proxy_url():
-                        break
-                    time.sleep(10.0)
-                else:
+                    if not nova_dns_doh.proxy_url():
+                        time.sleep(10.0)
+                        continue
                     if log_func:
-                        log_func(f"{nova_dns_doh.LOG_PREFIX} слот так и не поднялся — "
-                                 f"DNS-разблокировка ждёт перезапуска.")
-                    return
-                if is_closing:
-                    return
+                        log_func(f"{nova_dns_doh.LOG_PREFIX} слот поднялся — настраиваю NRPT.")
+                    setup_nrpt_dns_unblock(log_func=log_func)
+                    if nova_dns_doh.running():
+                        return
+                    time.sleep(10.0)
                 if log_func:
-                    log_func(f"{nova_dns_doh.LOG_PREFIX} слот поднялся — повторяю настройку NRPT.")
-                setup_nrpt_dns_unblock(log_func=log_func)
+                    log_func(f"{nova_dns_doh.LOG_PREFIX} резолвер не поднялся за минуту — "
+                             f"DNS-разблокировка ждёт перезапуска.")
             except Exception:
                 pass
             finally:
@@ -15692,6 +15691,7 @@ function FindProxyForURLEx(url, host) {{
                             if log_func:
                                 log_func(f"{nova_dns_doh.LOG_PREFIX} резолвер не поднят "
                                          f"повторно: {reason}.")
+                            _schedule_dns_doh_retry(log_func)
                             _remove_nrpt_dns_unblock_unlocked(log_func=log_func, silent=True)
                             return False
                 if not desired:
