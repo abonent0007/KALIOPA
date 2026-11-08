@@ -63,30 +63,29 @@ class AIRoutingTests(unittest.TestCase):
 
 
 class AIPrimaryRouteTests(unittest.TestCase):
-    """Google AI/opencode: зарубежный основной слот, иначе строка AI (Opera EU)."""
+    """Google AI/opencode: строка AI (Opera EU .47); primary — если secondary лёг."""
 
     AI = "PROXY 127.0.0.1:1371"
     PRIMARY = "SOCKS5 127.0.0.1:1370"
 
-    def route(self, mode="opera", active=True, foreign=True):
-        return choose_ai_primary_route(mode, self.AI, self.PRIMARY, active, foreign)
+    def route(self, mode="opera", active=True, secondary=True):
+        return choose_ai_primary_route(mode, self.AI, self.PRIMARY, active, secondary)
 
-    def test_foreign_primary_takes_google_ai(self):
-        self.assertEqual(self.PRIMARY, self.route())
+    def test_ai_row_is_used_when_secondary_up(self):
+        # Opera EU 77.111.244.47 (NL): Gemini и ChatGPT 200 без капчи.
+        self.assertEqual(self.AI, self.route())
 
-    def test_russian_primary_keeps_ai_row(self):
-        # WARP с GeoIP RU сайт Gemini грузит, но панель Chrome регион не
-        # принимает; Opera EU 77.111.244.47 (NL) отдаёт 200 без капчи.
-        self.assertEqual(self.AI, self.route(foreign=False))
+    def test_secondary_down_uses_primary(self):
+        self.assertEqual(self.PRIMARY, self.route(secondary=False))
 
-    def test_down_primary_keeps_ai_row(self):
-        self.assertEqual(self.AI, self.route(active=False))
+    def test_secondary_and_primary_down_keeps_ai_row(self):
+        self.assertEqual(self.AI, self.route(active=False, secondary=False))
 
     def test_direct_mode_is_not_overridden(self):
         self.assertEqual("DIRECT", self.route(mode="direct"))
 
-    def test_auto_mode_also_prefers_foreign_primary(self):
-        self.assertEqual(self.PRIMARY, self.route(mode="auto"))
+    def test_auto_mode_also_uses_ai_row(self):
+        self.assertEqual(self.AI, self.route(mode="auto"))
 
 
 if __name__ == "__main__":

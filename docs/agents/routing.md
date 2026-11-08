@@ -88,13 +88,12 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 8. Явные режимы приложений (`discord`/`telegram`/`whatsapp`/`ai_apps` ≠ auto)
    → их маршрут.
 9. `ai_primary` (Google AI: Gemini, AI Studio, NotebookLM, Flow, Jules и их
-   `*.googleapis.com`; плюс `opencode.ai`) → основной слот, только если он
-   поднят и выходит не из RU. Иначе — маршрут строки `ai_apps` (Opera EU
-   `77.111.244.47`, NL). Правило стоит **раньше** `ai_apps`. ChatGPT/Claude
-   сюда не входят — им WARP отвечает 403. Замер 2026-11-08: WARP с GeoIP RU
-   сайт Gemini грузит, но панель Chrome регион не принимает; Opera EU .47
-   отдаёт Gemini `200` без `/sorry`, ChatGPT `200`, Google-поиск без капчи,
-   а второй адрес пула `.247.19` — `/sorry`.
+   `*.googleapis.com`; плюс `opencode.ai`) → строка `ai_apps` (Opera EU
+   `77.111.244.47`, NL). Основной слот — только запасной путь, если вторичный
+   слот лёг. Правило стоит **раньше** `ai_apps`. Замер 2026-11-08: Opera EU
+   .47 отдаёт Gemini `200` без `/sorry`, ChatGPT `200`, Google-поиск без капчи;
+   WARP с GeoIP RU сайт грузит, но панель Chrome регион не принимает;
+   `.247.19` из того же пула — `/sorry`.
 10. AI-домены: `ai_apps` (в текущей сборке `opera`) → 1371; `ai_unlock`/NRPT
     работают отдельно.
 11. `eu` (`list/second.txt`) → EU-маршрут.
@@ -112,8 +111,8 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 | RU (main.txt, auto/fallback) | `SOCKS5 127.0.0.1:1370; PROXY 127.0.0.1:1371` |
 | EU / YouTube | `PROXY 127.0.0.1:1371; SOCKS5 127.0.0.1:1370` |
 | AI-приложения (`ai_apps=opera`) | `PROXY 127.0.0.1:1371` |
-| Google AI / `opencode.ai` (основной выход не из RU) | `SOCKS5 127.0.0.1:1370` |
-| Google AI / `opencode.ai` (основной выход RU) | `PROXY 127.0.0.1:1371` (Opera EU .47) |
+| Google AI / `opencode.ai` (secondary поднят) | `PROXY 127.0.0.1:1371` (Opera EU .47) |
+| Google AI / `opencode.ai` (secondary лёг) | `SOCKS5 127.0.0.1:1370` |
 | `.ru`, `exclude`, локальные TLD | `DIRECT` |
 | Остальной мир (`foreign_default`) | RU-маршрут → VPN |
 | Резервы Tor/VLESS | в PAC не попадают, пока вторичный слот не переключён на них явно |

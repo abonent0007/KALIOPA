@@ -38,9 +38,8 @@ AI_APP_DOMAINS = (
     # Jan: its own mirror apps.jan.ai, models from Hugging Face (huggingface.co, *.hf.co CDN)
     "jan.ai", "huggingface.co", "hf.co",
     # Google AI: тот же набор, что точечно добавлен в ai_second. Правило ai_primary
-    # отправляет эти хосты на основной слот, только если он выходит не из RU; при
-    # RU-основном работает Opera EU 77.111.244.47 (NL) — Gemini 200 без /sorry.
-    # ChatGPT/Claude на WARP не уходят: он отдаёт им 403.
+    # ведёт эти хосты по строке ai_apps — Opera EU 77.111.244.47 (NL): Gemini и
+    # ChatGPT 200 без капчи. Основной слот — только если вторичный лёг.
     "gemini.google.com", "aistudio.google.com", "ai.google.dev", "labs.google",
     "flow.google.com", "jules.google.com", "notebook.google.com", "notebooklm.google.com",
     "aisandbox-pa.googleapis.com", "robinfrontend-pa.googleapis.com",
@@ -49,19 +48,18 @@ AI_APP_DOMAINS = (
 
 
 def choose_ai_primary_route(ai_apps_mode, ai_apps_route, primary_route,
-                            primary_active, primary_foreign):
+                            primary_active, secondary_active):
     """Маршрут Google AI (Gemini) и opencode.ai.
 
-    Основной слот берёт их только когда он поднят и выходит не из RU: WARP с
-    российским GeoIP грузит сайт Gemini, но панель Chrome считает регион
-    недоступным, а Google периодически отвечает капчей. Иначе работает строка
-    «ИИ-приложения» — Opera EU 77.111.244.47 (NL): замер 2026-11-08 — Gemini
-    200 без `/sorry`, ChatGPT 200, Google-поиск без капчи. ChatGPT/Claude на
-    WARP не уходят: он отдаёт им 403. Явный выбор «Напрямую» не подменяется.
+    Opera EU 77.111.244.47 (NL) отдаёт и Gemini, и ChatGPT без капчи (замер
+    2026-11-08), поэтому по умолчанию работает строка «ИИ-приложения». Основной
+    слот — только запасной путь, когда вторичный слот лёг: WARP с GeoIP RU
+    сайт грузит, но панель Chrome регион не принимает. Явный выбор «Напрямую»
+    не подменяется.
     """
     if str(ai_apps_mode or "").strip().lower() == "direct":
         return "DIRECT"
-    if primary_active and primary_foreign:
+    if not secondary_active and primary_active:
         return primary_route
     return ai_apps_route
 

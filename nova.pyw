@@ -9094,16 +9094,15 @@ try:
                 ai_second_js = "{" + ",".join(f'"{d}":1' for d in sorted(ai_second_domains)) + "}"
                 # Без хвоста DIRECT: один отказ second — и Chrome на 5 минут пускал бы все ИИ-домены напрямую (G97).
                 ai_second_route = (secondary_route if secondary_active else "DIRECT")
-                # Google AI и opencode.ai — на основной слот, только пока он
-                # выходит не из RU. Российский WARP сайт Gemini грузит, но панель
-                # Chrome регион не принимает, а Google отвечает капчей; тогда
-                # работает строка ai_apps — Opera EU 77.111.244.47 (NL), замер
-                # 2026-11-08: Gemini 200 без /sorry, ChatGPT 200. ChatGPT и
-                # Claude на WARP не уходят: он отдаёт им 403.
+                # Google AI и opencode.ai — по строке ai_apps (Opera EU
+                # 77.111.244.47, NL): она отдаёт и Gemini, и ChatGPT без капчи.
+                # Основной слот — только запасной путь, когда вторичный лёг:
+                # WARP с GeoIP RU сайт грузит, но панель Chrome регион не
+                # принимает. ChatGPT/Claude на WARP не уходят: он отдаёт 403.
                 ai_primary_hosts = set(_google_ai_hosts) | {"opencode.ai"}
                 ai_primary_js = "{" + ",".join(f'"{d}":1' for d in sorted(ai_primary_hosts)) + "}"
                 ai_primary_route = choose_ai_primary_route(
-                    ai_apps_mode, ai_apps_route, primary_route, warp_active, primary_foreign)
+                    ai_apps_mode, ai_apps_route, primary_route, warp_active, secondary_active)
                 # Выход second заблокирован сервисом по региону (ai_region_worker пробует API
                 # через него) — тогда напрямую по winws, но только если имя этого сервиса
                 # разворачивает DNS-разблокировщик (DNS-AI, comss, geohide: системный
@@ -10821,15 +10820,22 @@ function FindProxyForURLEx(url, host) {{
                 self._forced_warp_proxy = ""
 
                 attempts = []
-                if cached_endpoint and self._endpoint_reachable(cached_endpoint):
-                    attempts.append(("cached", cached_endpoint, 2.5, None))
+                # Прямая TCP-проба имеет смысл только для прямого диала. Когда
+                # слот поднимается через WARP (full_dial_proxy), edge может быть
+                # недоступен напрямую (DPI), но отлично работать через -proxy:
+                # 2026-11-08 .47 не отвечал на прямой TCP, а через 1370 отдавал
+                # 204 и Gemini 200. Иначе кэш и лента выбрасывались и 1371 не
+                # поднимался вовсе.
+                _cached_ready_timeout = 4.0 if full_dial_proxy else 2.5
+                if cached_endpoint and (full_dial_proxy or self._endpoint_reachable(cached_endpoint)):
+                    attempts.append(("cached", cached_endpoint, _cached_ready_timeout, None))
                 # Discover идёт раньше опубликованной ленты: замер 2026-11-01 показал,
                 # что все пять адресов из ленты принимают TCP и молчат в туннеле, а
                 # discover отдаёт рабочий .19. Лента остаётся запасным путём.
                 attempts.append(("discover", None, 8.0, None))
                 skipped = 0
                 for _published in self._published_endpoints():
-                    if self._endpoint_reachable(_published):
+                    if full_dial_proxy or self._endpoint_reachable(_published):
                         attempts.append(("published", _published, 3.0, None))
                     else:
                         skipped += 1
