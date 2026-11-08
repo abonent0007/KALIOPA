@@ -15,7 +15,7 @@ SHIPPED = BASE / "resources" / "nova_route_spec.json"
 TEMPLATE = BASE / "tools" / "route-editor" / "templates" / "kaliopa-clean.json"
 
 CLEAN_SETTINGS = {
-    "opera_region": "US",
+    "opera_region": "EU",
     "secondary": {"mode": "opera"},
     "routes": {"browser": "auto", "telegram": "warp", "ai_apps": "opera"},
 }

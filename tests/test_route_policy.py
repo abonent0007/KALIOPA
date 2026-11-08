@@ -14,7 +14,7 @@ class SettingsTests(unittest.TestCase):
     def test_clean_config_matches(self):
         settings = {
             "secondary": {"mode": "opera"},
-            "opera_region": "US",
+            "opera_region": "EU",
             "routes": {"browser": "auto", "telegram": "warp", "ai_apps": "opera"},
         }
         self.assertEqual([], policy.check_settings(settings))

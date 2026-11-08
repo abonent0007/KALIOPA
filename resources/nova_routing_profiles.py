@@ -37,10 +37,10 @@ AI_APP_DOMAINS = (
     "opencode.ai",
     # Jan: its own mirror apps.jan.ai, models from Hugging Face (huggingface.co, *.hf.co CDN)
     "jan.ai", "huggingface.co", "hf.co",
-    # Google AI: тот же набор, что точечно добавлен в ai_second. Отдельное правило
-    # ai_primary в PAC отправляет эти хосты на основной слот, как только он поднят:
-    # выход Opera Google помечает капчей, а WARP отдаёт Gemini 200 (ChatGPT — 403,
-    # поэтому OpenAI/Anthropic остаются на 1371).
+    # Google AI: тот же набор, что точечно добавлен в ai_second. Правило ai_primary
+    # отправляет эти хосты на основной слот, только если он выходит не из RU; при
+    # RU-основном работает Opera EU 77.111.244.47 (NL) — Gemini 200 без /sorry.
+    # ChatGPT/Claude на WARP не уходят: он отдаёт им 403.
     "gemini.google.com", "aistudio.google.com", "ai.google.dev", "labs.google",
     "flow.google.com", "jules.google.com", "notebook.google.com", "notebooklm.google.com",
     "aisandbox-pa.googleapis.com", "robinfrontend-pa.googleapis.com",
@@ -49,19 +49,19 @@ AI_APP_DOMAINS = (
 
 
 def choose_ai_primary_route(ai_apps_mode, ai_apps_route, primary_route,
-                            primary_active):
+                            primary_active, primary_foreign):
     """Маршрут Google AI (Gemini) и opencode.ai.
 
-    Основной слот годится, как только он поднят: выход Opera (1371) Google
-    помечает капчей, а сам 1371 диалится через 1370 и отдаёт 502, когда WARP
-    не поднялся. Замер 2026-11-08: Gemini через 1370 отдаёт полную страницу
-    (874 КБ, без /sorry), хотя GeoIP выхода числится RU; ChatGPT/Claude сюда
-    не входят — им WARP отвечает 403. Явный выбор «ИИ-приложения = Напрямую»
-    не подменяется.
+    Основной слот берёт их только когда он поднят и выходит не из RU: WARP с
+    российским GeoIP грузит сайт Gemini, но панель Chrome считает регион
+    недоступным, а Google периодически отвечает капчей. Иначе работает строка
+    «ИИ-приложения» — Opera EU 77.111.244.47 (NL): замер 2026-11-08 — Gemini
+    200 без `/sorry`, ChatGPT 200, Google-поиск без капчи. ChatGPT/Claude на
+    WARP не уходят: он отдаёт им 403. Явный выбор «Напрямую» не подменяется.
     """
     if str(ai_apps_mode or "").strip().lower() == "direct":
         return "DIRECT"
-    if primary_active:
+    if primary_active and primary_foreign:
         return primary_route
     return ai_apps_route
 

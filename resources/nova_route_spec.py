@@ -206,8 +206,8 @@ def settings_issues(settings):
     if mode != "opera":
         issues.append("secondary.mode должен быть opera, сейчас %r" % mode)
     region = str(settings.get("opera_region") or "").strip().upper()
-    if region != "US":
-        issues.append("opera_region должен быть US, сейчас %r" % region)
+    if region != "EU":
+        issues.append("opera_region должен быть EU, сейчас %r" % region)
     routes = settings.get("routes") if isinstance(settings.get("routes"), dict) else {}
     for key, expected, label in EXPECTED_SETTINGS:
         actual = str(routes.get(key) or "").strip().lower()

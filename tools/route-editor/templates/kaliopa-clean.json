@@ -2,7 +2,7 @@
     "schema": "kaliopa.route-lab/1",
     "version": 1,
     "name": "kaliopa-clean",
-    "notes": "Логически верная схема KALIOPA 1.44.2.36 (2026-11-08). PAC 1369: localhost/LAN/exclude/.ru/user_direct → DIRECT; ai_apps/eu/youtube → Opera US 1371 (Google AI/opencode.ai → WARP 1370); ru/foreign-default → WARP 1370 (fallback 1371). Primary 1370 — один слушатель Custom/WARPgen_custom_07 (AWG UDP 188.114.96.248:2408); MASQUE/Proton/CF-AWG — взаимоисключающие альтернативы на 1370. Opera US диалится через WARP 1370 (bootstrap), прямой US мёртв. Telegram — явный 1372 → тот же 1370 → DC, без Opera/Tor. DNS-AI — NRPT 127.0.0.1:53 → DoH HTTP/2 через 1370. Tor 1375/VLESS 1379 — холодные резервы только при secondary=tor/profile. PAC — только TCP; QUIC UDP/443 — WinDivert/WFP; fallback 1370→1371 гео, не health; WinINET Ex вырезает SOCKS5.",
+    "notes": "Логически верная схема KALIOPA 1.44.2.39 (2026-11-08). PAC 1369: localhost/LAN/exclude/.ru/user_direct → DIRECT; ai_apps/eu/youtube → Opera EU 1371 (77.111.244.47, NL); Google AI/opencode.ai → WARP 1370, только если основной выход не из RU, иначе 1371; ru/foreign-default → WARP 1370 (fallback 1371). Primary 1370 — один слушатель Custom/WARPgen_custom_07 (AWG UDP 188.114.96.248:2408); MASQUE/Proton/CF-AWG — взаимоисключающие альтернативы на 1370. Opera EU диалится через WARP 1370 (bootstrap), прямой US мёртв. Telegram — явный 1372 → тот же 1370 → DC, без Opera/Tor. DNS-AI — NRPT 127.0.0.1:53 → DoH HTTP/2 через 1370. Tor 1375/VLESS 1379 — холодные резервы только при secondary=tor/profile. PAC — только TCP; QUIC UDP/443 — WinDivert/WFP; fallback 1370→1371 гео, не health; WinINET Ex вырезает SOCKS5.",
     "nodes": [
         {
             "id": "device",
@@ -49,7 +49,7 @@
             "y": 120,
             "host": "127.0.0.1",
             "port": "1369",
-            "note": "FindProxyForURL: localhost/LAN → DIRECT; user_direct/exclude/.ru/.su/.рф → DIRECT; discord/whatsapp/spotify → DIRECT (сейчас); ai_apps/eu/ai_second → 1371, кроме Google AI (Gemini) и opencode.ai → 1370; youtube → 1371;1370; ru/user_ru/foreign-default → 1370;1371. DIRECT не fallback — fallback VPN. Fallback гео, не health: 1371 диалится через 1370, при падении WARP нужен Tor/VLESS (холодный) или рестарт WARP. PAC — только TCP; QUIC UDP/443 перехватывает WinDivert/WFP (NovaDivert), не глобальный блок wf.msc. WinINET — FindProxyForURLEx вырезает SOCKS5, оставляет PROXY; браузеры — смешанную цепочку SOCKS5+PROXY.",
+            "note": "FindProxyForURL: localhost/LAN → DIRECT; user_direct/exclude/.ru/.su/.рф → DIRECT; discord/whatsapp/spotify → DIRECT (сейчас); ai_apps/eu/ai_second → 1371; Google AI/opencode → 1370 при зарубежном основном, иначе 1371; youtube → 1371;1370; ru/user_ru/foreign-default → 1370;1371. DIRECT не fallback — fallback VPN. Fallback гео, не health: 1371 диалится через 1370, при падении WARP нужен Tor/VLESS (холодный) или рестарт WARP. PAC — только TCP; QUIC UDP/443 перехватывает WinDivert/WFP (NovaDivert), не глобальный блок wf.msc. WinINET — FindProxyForURLEx вырезает SOCKS5, оставляет PROXY; браузеры — смешанную цепочку SOCKS5+PROXY.",
             "tags": []
         },
         {
@@ -97,19 +97,19 @@
             "y": 10,
             "host": "127.0.0.1",
             "port": "1370",
-            "note": "Текущий primary Custom/WARPgen_custom_07; wireproxy-awg. Один слушатель на 1370; MASQUE/Proton/CF-AWG — альтернативы, вытесняют его, не параллельны. Google AI (Gemini) и opencode.ai идут сюда, пока основной слот поднят.",
+            "note": "Текущий primary Custom/WARPgen_custom_07; wireproxy-awg. Один слушатель на 1370; MASQUE/Proton/CF-AWG — альтернативы, вытесняют его, не параллельны. Google AI (Gemini) и opencode.ai идут сюда, только если основной выход не из RU; при RU — Opera EU 1371.",
             "tags": []
         },
         {
             "id": "opera",
             "type": "proxy",
-            "label": "Opera US · через WARP",
-            "sub": "HTTP 127.0.0.1:1371 · выход US",
+            "label": "Opera EU · через WARP",
+            "sub": "HTTP 127.0.0.1:1371 · выход NL",
             "x": 760,
             "y": 110,
             "host": "127.0.0.1",
             "port": "1371",
-            "note": "Только HTTP CONNECT TCP 443; MTProto не переносит. SurfEasy bootstrap (discover) идёт через WARP 1370 (-proxy socks5h://127.0.0.1:1370), прямой US мёртв. ai_apps/eu/youtube — сюда; Google AI и opencode.ai — нет (Opera-выход ловит капчу Google, а при мёртвом WARP 1371 отдаёт 502).",
+            "note": "Только HTTP CONNECT TCP 443; MTProto не переносит. SurfEasy bootstrap (discover) идёт через WARP 1370 (-proxy socks5h://127.0.0.1:1370). EU-пул: 77.111.244.47 (NL, AMS) — Gemini/ChatGPT 200 без капчи; 77.111.247.19 даёт /sorry — не использовать. ai_apps/eu/youtube и Google AI/opencode при RU-основном — сюда.",
             "tags": []
         },
         {
@@ -187,13 +187,13 @@
         {
             "id": "opera_edge",
             "type": "edge",
-            "label": "Opera VPN edge (US)",
-            "sub": "77.111.246.61:443 · US (AM)",
+            "label": "Opera VPN edge (EU)",
+            "sub": "77.111.244.47:443 · NL (AMS)",
             "x": 1020,
             "y": 110,
-            "host": "77.111.246.61",
+            "host": "77.111.244.47",
             "port": "443",
-            "note": "Живой endpoint из ленты/discover 2026-11-08; диалится через WARP 1370.",
+            "note": "Живой endpoint EU-пула 2026-11-08; 77.111.247.19 из того же пула отдаёт /sorry — не использовать. Диалится через WARP 1370.",
             "tags": []
         },
         {
@@ -379,7 +379,7 @@
             "from": "pac",
             "to": "opera",
             "transport": "HTTP CONNECT 1371",
-            "condition": "ai_apps/eu/ai_second/youtube → 1371 · гео, не health",
+            "condition": "ai_apps/eu/ai_second/youtube → 1371 (EU NL .47); Google AI/opencode → 1370 при зарубежном основном",
             "label": "→ PROXY 127.0.0.1:1371",
             "order": 8,
             "style": "solid"

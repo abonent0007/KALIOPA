@@ -116,7 +116,7 @@ def primary_endpoint():
 def update_nodes(data, facts):
     nodes = {node["id"]: node for node in data.get("nodes", [])}
     endpoint = facts.get("warp_endpoint") or "188.114.96.248:2408"
-    opera_endpoint = facts.get("opera_endpoint") or "77.111.246.x:443"
+    opera_endpoint = facts.get("opera_endpoint") or "77.111.244.47:443"
     if "warp" in nodes:
         nodes["warp"].update({
             "label": f"WARP · {facts['primary']}",
@@ -124,13 +124,13 @@ def update_nodes(data, facts):
         })
     if "opera" in nodes:
         nodes["opera"].update({
-            "label": "Opera US · через WARP",
-            "sub": f"HTTP 127.0.0.1:1371 · выход {facts['opera_exit'] or '?'}",
+            "label": "Opera EU · через WARP",
+            "sub": f"HTTP 127.0.0.1:1371 · выход {facts['opera_exit'] or 'NL'}",
         })
     if "opera_edge" in nodes:
         nodes["opera_edge"].update({
-            "label": "Opera VPN edge (US)",
-            "sub": f"{opera_endpoint} · US (AM) · через WARP-диал",
+            "label": "Opera VPN edge (EU)",
+            "sub": f"{opera_endpoint} · NL (AMS) · через WARP-диал",
             "host": opera_endpoint.split(":")[0],
             "port": opera_endpoint.split(":")[-1] if ":" in opera_endpoint else "443",
         })
@@ -156,7 +156,10 @@ def update_nodes(data, facts):
             edge["condition"] = "ru/user_ru/foreign-default → 1370 · гео, не health"
             edge["label"] = "→ SOCKS5 127.0.0.1:1370"
         elif edge.get("id") == "e-pac-opera":
-            edge["condition"] = ("ai_apps/eu/ai_second/youtube → 1371, кроме Google AI/opencode.ai → 1370 (капча/502) · гео, не health")
+            edge["condition"] = (
+                "ai_apps/eu/ai_second/youtube → 1371 (EU NL .47); "
+                "Google AI/opencode → 1370 при зарубежном основном"
+            )
             edge["label"] = f"→ {facts['ai_route']}" if facts.get("ai_route") else "→ PROXY 127.0.0.1:1371"
         elif edge.get("id") == "e-pac-direct":
             edge["condition"] = "localhost·LAN·exclude·.ru·user_direct"
@@ -171,12 +174,12 @@ def update_nodes(data, facts):
     data["notes"] = (
         f"Логически верная схема KALIOPA {facts['version']} на {facts['date']}. "
         f"PAC 1369: localhost/LAN/exclude/.ru/user_direct → DIRECT; "
-        f"ai_apps/eu/youtube → Opera US 1371, кроме Google AI/opencode.ai → WARP 1370 (капча/502); "
-        f"выход Opera {facts['opera_exit'] or '?'}. "
+        f"ai_apps/eu/youtube → Opera EU 1371 (NL .47); Google AI/opencode → WARP 1370 только при зарубежном основном, иначе 1371. "
+        f"выход Opera {facts['opera_exit'] or 'NL'}. "
         f"ru/foreign-default → WARP 1370 (выход {facts['warp_exit'] or '?'}). "
         f"Основной слот: {facts['primary']} — один слушатель Custom AWG UDP {facts.get('warp_endpoint') or '188.114.96.248:2408'}, "
         f"альтернативы на 1370 взаимоисключают его. "
-        f"Opera US диалится через WARP 1370 (bootstrap -proxy socks5h), прямой US мёртв. "
+        f"Opera EU диалится через WARP 1370 (bootstrap -proxy socks5h), 77.111.244.47 — NL (AMS). "
         f"Fallback 1370→1371 — гео, не health: при падении WARP нужен Tor/VLESS или рестарт WARP. "
         f"PAC — только TCP; QUIC UDP/443 — WinDivert/WFP; WinINET Ex вырезает SOCKS5. "
         f"Telegram: явный 1372 → тот же 1370 → DC. DNS-AI: NRPT 127.0.0.1:53 → DoH HTTP/2 через 1370. "

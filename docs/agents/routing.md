@@ -54,7 +54,7 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
         │
         ├── HTTP CONNECT 127.0.0.1:1371
         │       │  opera-proxy
-        │       │  TLS/HTTP CONNECT к Opera edge 77.111.246.61:443 (US)
+        │       │  TLS/HTTP CONNECT к Opera edge 77.111.244.47:443 (NL/AMS)
         │       ▼
         │   Opera VPN edge
         │       ▼
@@ -88,12 +88,13 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 8. Явные режимы приложений (`discord`/`telegram`/`whatsapp`/`ai_apps` ≠ auto)
    → их маршрут.
 9. `ai_primary` (Google AI: Gemini, AI Studio, NotebookLM, Flow, Jules и их
-   `*.googleapis.com`; плюс `opencode.ai`) → основной слот, как только он
-   поднят. Иначе — маршрут строки `ai_apps`. Правило стоит **раньше** `ai_apps`:
-   выход Opera Google помечает капчей, а 1371 при мёртвом WARP отдаёт 502.
-   ChatGPT/Claude сюда не входят — им WARP отвечает 403. Замер 2026-11-08:
-   Gemini через 1370 отдаёт полную страницу (874 КБ, без `/sorry`), хотя GeoIP
-   выхода числится RU.
+   `*.googleapis.com`; плюс `opencode.ai`) → основной слот, только если он
+   поднят и выходит не из RU. Иначе — маршрут строки `ai_apps` (Opera EU
+   `77.111.244.47`, NL). Правило стоит **раньше** `ai_apps`. ChatGPT/Claude
+   сюда не входят — им WARP отвечает 403. Замер 2026-11-08: WARP с GeoIP RU
+   сайт Gemini грузит, но панель Chrome регион не принимает; Opera EU .47
+   отдаёт Gemini `200` без `/sorry`, ChatGPT `200`, Google-поиск без капчи,
+   а второй адрес пула `.247.19` — `/sorry`.
 10. AI-домены: `ai_apps` (в текущей сборке `opera`) → 1371; `ai_unlock`/NRPT
     работают отдельно.
 11. `eu` (`list/second.txt`) → EU-маршрут.
@@ -111,7 +112,8 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 | RU (main.txt, auto/fallback) | `SOCKS5 127.0.0.1:1370; PROXY 127.0.0.1:1371` |
 | EU / YouTube | `PROXY 127.0.0.1:1371; SOCKS5 127.0.0.1:1370` |
 | AI-приложения (`ai_apps=opera`) | `PROXY 127.0.0.1:1371` |
-| Google AI / `opencode.ai` (основной слот поднят) | `SOCKS5 127.0.0.1:1370` |
+| Google AI / `opencode.ai` (основной выход не из RU) | `SOCKS5 127.0.0.1:1370` |
+| Google AI / `opencode.ai` (основной выход RU) | `PROXY 127.0.0.1:1371` (Opera EU .47) |
 | `.ru`, `exclude`, локальные TLD | `DIRECT` |
 | Остальной мир (`foreign_default`) | RU-маршрут → VPN |
 | Резервы Tor/VLESS | в PAC не попадают, пока вторичный слот не переключён на них явно |
@@ -140,12 +142,12 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 
 | Режим | Локальные порты | Куда |
 |---|---|---|
-| **Opera** (текущий) | HTTP `1371` | `opera-proxy` → Opera edge `77.111.246.61:443` (US) |
+| **Opera** (текущий) | HTTP `1371` | `opera-proxy` → Opera edge `77.111.244.47:443` (NL/AMS) |
 | Tor (резерв) | SOCKS5 `1375`, HTTP `1378` | Tor network, только TCP |
 | VLESS-профиль (резерв) | SOCKS5 `1379`, HTTP `1380` | `nova-xray` → VLESS edge |
 
 `secondary.mode` в `temp/routing_settings.json` задаёт один из них; одновременно
-живёт только один. Сейчас Opera US, порты 1375/1378/1379/1380 закрыты.
+живёт только один. Сейчас Opera EU, порты 1375/1378/1379/1380 закрыты.
 
 ### `last_resort`
 
@@ -226,22 +228,23 @@ Get-Content "$env:LOCALAPPDATA\Nova\temp\nova_console.log" -Tail 50 | Select-Str
 Ожидаемо: PAC 200, SOCKS5/HTTP — 204, Telegram relay отвечает; в логе
 `[TgRelay]` маршрут `warp-socks`, `502` = 0.
 
-## 8. Текущее живое состояние (2026-11-04)
+## 8. Текущее живое состояние (2026-11-08)
 
 | Параметр | Значение |
 |---|---|
-| Версия | 1.44.2.22 |
-| Основной слот | CF MASQUE, SOCKS5 1370, выход RU |
-| Вторичный слот | Opera US, HTTP 1371, `77.111.246.61` |
+| Версия | 1.44.2.39 |
+| Основной слот | Custom/WARPgen_custom_07, SOCKS5 1370, GeoIP RU |
+| Вторичный слот | Opera EU, HTTP 1371, `77.111.244.47` (NL/AMS) |
 | Telegram | relay 1372 → warp-socks 1370 → DC |
-| DNS | NRPT, DoH выключен |
+| DNS | NRPT + DoH через 1370 |
 | Tor / VLESS | закрыты (1375/1378/1379/1380) |
 | PAC | 1369, режим hybrid, foreign_default=VPN |
 | `502` в релее | 0 |
 
-Примечание: в Route Lab узел `opera_edge` подписан `77.111.247.19 · US`, но
-`.247.19` — это SE; текущий US-адрес — `77.111.246.61`. Подпись графа не
-влияет на маршрутизацию: регион задаётся `opera_region=US`.
+Примечание: EU-пул Opera отдаёт два адреса. `77.111.244.47` (NL, AMS) —
+Gemini/ChatGPT `200` без капчи; `77.111.247.19` — `/sorry` от Google, в
+профиле закреплён `.47` через `temp/opera_endpoint_cache.json`. Регион задаётся
+`opera_region=EU`; адрес `.247.19` не использовать.
 
 ## Схема Route Lab в программе
 
