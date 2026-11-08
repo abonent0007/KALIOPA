@@ -6,8 +6,8 @@
 ## Шаблон по умолчанию
 
 При открытии сразу загружается **`templates/kaliopa-clean.json`** — текущая
-цепочка KALIOPA 1.44.2.36 на 24 узла и 33 связи: PAC 1369, WARP/MASQUE 1370,
-Opera US 1371, Telegram 1372 → WARP, DNS/NRPT и резервы Tor / VLESS /
+цепочка KALIOPA 1.44.2.40 на 24 узла и 33 связи: PAC 1369, WARP/MASQUE 1370,
+Opera EU 1371, Telegram 1372 → WARP, DNS/NRPT и резервы Tor / VLESS /
 Proton AWG / CF AWG. Кнопка **«Шаблон Kaliopa»** перезагружает его после правок.
 Та же схема лежит в программе — `resources/nova_route_spec.json`; равенство
 файлов держит `tests/test_route_spec.py`.
@@ -40,7 +40,7 @@ php -S 127.0.0.1:8099 -t tools\route-editor
 `python tools/route-editor/snapshot.py` читает **установленную** Nova (выбор
 профиля, `routing_settings.json`, живой `temp/nova.pac`, exit-страны слотов
 1370/1371) и обновляет `templates/kaliopa-clean.json`: следующий запуск Route
-Lab открывает актуальную цепочку, а не снимок 1.44.2.22. Без сети обновляется
+Lab открывает актуальную цепочку, а не прошлый снимок. Без сети обновляется
 всё, кроме подписей exit (остаются прежними). Тот же JSON записывается в
 `resources/nova_route_spec.json` — схему, с которой Nova сверяет настройки и
 PAC при каждой генерации (только журнал, маршруты не меняются).

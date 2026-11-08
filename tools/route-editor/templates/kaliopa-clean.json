@@ -2,7 +2,7 @@
     "schema": "kaliopa.route-lab/1",
     "version": 1,
     "name": "kaliopa-clean",
-    "notes": "Логически верная схема KALIOPA 1.44.2.39 (2026-11-08). PAC 1369: localhost/LAN/exclude/.ru/user_direct → DIRECT; ai_apps/eu/youtube → Opera EU 1371 (77.111.244.47, NL); Google AI/opencode → 1371 (Opera EU .47); 1370 — только если 1371 лёг; ru/foreign-default → WARP 1370 (fallback 1371). Primary 1370 — один слушатель Custom/WARPgen_custom_07 (AWG UDP 188.114.96.248:2408); MASQUE/Proton/CF-AWG — взаимоисключающие альтернативы на 1370. Opera EU диалится через WARP 1370 (bootstrap), прямой US мёртв. Telegram — явный 1372 → тот же 1370 → DC, без Opera/Tor. DNS-AI — NRPT 127.0.0.1:53 → DoH HTTP/2 через 1370. Tor 1375/VLESS 1379 — холодные резервы только при secondary=tor/profile. PAC — только TCP; QUIC UDP/443 — WinDivert/WFP; fallback 1370→1371 гео, не health; WinINET Ex вырезает SOCKS5.",
+    "notes": "Логически верная схема KALIOPA 1.44.2.40 на 2026-11-08. PAC 1369: localhost/LAN/exclude/.ru/user_direct → DIRECT; ai_apps/eu/youtube → Opera EU 1371 (NL 77.111.247.19); Google AI/opencode → 1371, 1370 — только если 1371 лёг. выход Opera NL. ru/foreign-default → WARP 1370 (выход RU). Основной слот: Custom/WARPgen_custom_07 — один слушатель Custom AWG UDP 188.114.96.248:2408, альтернативы на 1370 взаимоисключают его. Opera EU диалится через WARP 1370 (bootstrap -proxy socks5h), 77.111.247.19:443 — NL (AMS). Fallback 1370→1371 — гео, не health: при падении WARP нужен Tor/VLESS или рестарт WARP. PAC — только TCP; QUIC UDP/443 — WinDivert/WFP; WinINET Ex вырезает SOCKS5. Telegram: явный 1372 → тот же 1370 → DC. DNS-AI: NRPT 127.0.0.1:53 → DoH HTTP/2 через 1370. Tor 1375/VLESS 1379 — холодные резервы только при secondary=tor/profile. Маршруты: ai_apps=opera, browser=auto, discord=direct, games=direct, obs=auto, spotify=direct, telegram=warp, whatsapp=direct.",
     "nodes": [
         {
             "id": "device",
@@ -92,7 +92,7 @@
             "id": "warp",
             "type": "proxy",
             "label": "WARP · Custom/WARPgen_custom_07",
-            "sub": "SOCKS5 127.0.0.1:1370 · AWG UDP",
+            "sub": "SOCKS5 127.0.0.1:1370 · AWG UDP · выход RU",
             "x": 760,
             "y": 10,
             "host": "127.0.0.1",
@@ -188,10 +188,10 @@
             "id": "opera_edge",
             "type": "edge",
             "label": "Opera VPN edge (EU)",
-            "sub": "77.111.244.47:443 · NL (AMS)",
+            "sub": "77.111.247.19:443 · NL (AMS) · через WARP-диал",
             "x": 1020,
             "y": 110,
-            "host": "77.111.244.47",
+            "host": "77.111.247.19",
             "port": "443",
             "note": "Живой endpoint EU-пула 2026-11-08; 77.111.247.19 из того же пула отдаёт /sorry — не использовать. Диалится через WARP 1370.",
             "tags": []
@@ -379,7 +379,7 @@
             "from": "pac",
             "to": "opera",
             "transport": "HTTP CONNECT 1371",
-            "condition": "ai_apps/eu/ai_second/youtube → 1371 (EU NL .47); Google AI/opencode → 1370 только если 1371 лёг",
+            "condition": "ai_apps/eu/ai_second/youtube → 1371 (EU NL); Google AI/opencode → 1370 только если 1371 лёг",
             "label": "→ PROXY 127.0.0.1:1371",
             "order": 8,
             "style": "solid"

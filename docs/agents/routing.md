@@ -54,7 +54,7 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
         │
         ├── HTTP CONNECT 127.0.0.1:1371
         │       │  opera-proxy
-        │       │  TLS/HTTP CONNECT к Opera edge 77.111.244.47:443 (NL/AMS)
+        │       │  TLS/HTTP CONNECT к Opera edge 77.111.247.19:443 (NL/AMS)
         │       ▼
         │   Opera VPN edge
         │       ▼
@@ -88,12 +88,13 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 8. Явные режимы приложений (`discord`/`telegram`/`whatsapp`/`ai_apps` ≠ auto)
    → их маршрут.
 9. `ai_primary` (Google AI: Gemini, AI Studio, NotebookLM, Flow, Jules и их
-   `*.googleapis.com`; плюс `opencode.ai`) → строка `ai_apps` (Opera EU
-   `77.111.244.47`, NL). Основной слот — только запасной путь, если вторичный
-   слот лёг. Правило стоит **раньше** `ai_apps`. Замер 2026-11-08: Opera EU
-   .47 отдаёт Gemini `200` без `/sorry`, ChatGPT `200`, Google-поиск без капчи;
-   WARP с GeoIP RU сайт грузит, но панель Chrome регион не принимает;
-   `.247.19` из того же пула — `/sorry`.
+   `*.googleapis.com`; плюс `opencode.ai`) → строка `ai_apps` (Opera EU,
+   живой адрес пула — сейчас `77.111.247.19`, NL). Основной слот — только
+   запасной путь, если вторичный слот лёг. Правило стоит **раньше** `ai_apps`.
+   Замер 2026-11-08: живой EU-адрес отдаёт Gemini `200` без `/sorry`,
+   ChatGPT `200`, Google-поиск без капчи; WARP с GeoIP RU сайт грузит, но
+   панель Chrome регион не принимает. Пул ротирует адреса: `.244.47` днём был
+   чистым, к 18:06 умер.
 10. AI-домены: `ai_apps` (в текущей сборке `opera`) → 1371; `ai_unlock`/NRPT
     работают отдельно.
 11. `eu` (`list/second.txt`) → EU-маршрут.
@@ -111,7 +112,7 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 | RU (main.txt, auto/fallback) | `SOCKS5 127.0.0.1:1370; PROXY 127.0.0.1:1371` |
 | EU / YouTube | `PROXY 127.0.0.1:1371; SOCKS5 127.0.0.1:1370` |
 | AI-приложения (`ai_apps=opera`) | `PROXY 127.0.0.1:1371` |
-| Google AI / `opencode.ai` (secondary поднят) | `PROXY 127.0.0.1:1371` (Opera EU .47) |
+| Google AI / `opencode.ai` (secondary поднят) | `PROXY 127.0.0.1:1371` (Opera EU, NL) |
 | Google AI / `opencode.ai` (secondary лёг) | `SOCKS5 127.0.0.1:1370` |
 | `.ru`, `exclude`, локальные TLD | `DIRECT` |
 | Остальной мир (`foreign_default`) | RU-маршрут → VPN |
@@ -141,7 +142,7 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 
 | Режим | Локальные порты | Куда |
 |---|---|---|
-| **Opera** (текущий) | HTTP `1371` | `opera-proxy` → Opera edge `77.111.244.47:443` (NL/AMS) |
+| **Opera** (текущий) | HTTP `1371` | `opera-proxy` → Opera edge `77.111.247.19:443` (NL/AMS) |
 | Tor (резерв) | SOCKS5 `1375`, HTTP `1378` | Tor network, только TCP |
 | VLESS-профиль (резерв) | SOCKS5 `1379`, HTTP `1380` | `nova-xray` → VLESS edge |
 
@@ -233,17 +234,19 @@ Get-Content "$env:LOCALAPPDATA\Nova\temp\nova_console.log" -Tail 50 | Select-Str
 |---|---|
 | Версия | 1.44.2.39 |
 | Основной слот | Custom/WARPgen_custom_07, SOCKS5 1370, GeoIP RU |
-| Вторичный слот | Opera EU, HTTP 1371, `77.111.244.47` (NL/AMS) |
+| Вторичный слот | Opera EU, HTTP 1371, `77.111.247.19` (NL/AMS) |
 | Telegram | relay 1372 → warp-socks 1370 → DC |
 | DNS | NRPT + DoH через 1370 |
 | Tor / VLESS | закрыты (1375/1378/1379/1380) |
 | PAC | 1369, режим hybrid, foreign_default=VPN |
 | `502` в релее | 0 |
 
-Примечание: EU-пул Opera отдаёт два адреса. `77.111.244.47` (NL, AMS) —
-Gemini/ChatGPT `200` без капчи; `77.111.247.19` — `/sorry` от Google, в
-профиле закреплён `.47` через `temp/opera_endpoint_cache.json`. Регион задаётся
-`opera_region=EU`; адрес `.247.19` не использовать.
+Примечание: EU-пул Opera ротирует адреса. На 2026-11-08 18:35 живой —
+`77.111.247.19` (NL, AMS): Gemini/ChatGPT `200` без капчи; `77.111.244.47`
+к 18:06 перестал отвечать, хотя днём был чистым. Кэш
+`temp/opera_endpoint_cache.json` закрепляет живой адрес; при ротации
+приложение пересобирает его через `discover`/EU-over-WARP, первый запуск
+1371 может занять ~1–2 минуты.
 
 ## Схема Route Lab в программе
 
