@@ -151,10 +151,10 @@ def update_nodes(data, facts):
 
     for edge in data.get("edges", []):
         if edge.get("id") == "e-pac-warp":
-            edge["condition"] = "ru/user_ru/foreign-default → 1370"
+            edge["condition"] = "ru/user_ru/foreign-default → 1370 · гео, не health"
             edge["label"] = "→ SOCKS5 127.0.0.1:1370"
         elif edge.get("id") == "e-pac-opera":
-            edge["condition"] = "ai_apps/eu/ai_second/youtube → 1371"
+            edge["condition"] = "ai_apps/eu/ai_second/youtube → 1371 · гео, не health"
             edge["label"] = f"→ {facts['ai_route']}" if facts.get("ai_route") else "→ PROXY 127.0.0.1:1371"
         elif edge.get("id") == "e-pac-direct":
             edge["condition"] = "localhost·LAN·exclude·.ru·user_direct"
@@ -174,6 +174,8 @@ def update_nodes(data, facts):
         f"Основной слот: {facts['primary']} — один слушатель Custom AWG UDP {facts.get('warp_endpoint') or '188.114.96.248:2408'}, "
         f"альтернативы на 1370 взаимоисключают его. "
         f"Opera US диалится через WARP 1370 (bootstrap -proxy socks5h), прямой US мёртв. "
+        f"Fallback 1370→1371 — гео, не health: при падении WARP нужен Tor/VLESS или рестарт WARP. "
+        f"PAC — только TCP; QUIC UDP/443 — WinDivert/WFP; WinINET Ex вырезает SOCKS5. "
         f"Telegram: явный 1372 → тот же 1370 → DC. DNS-AI: NRPT 127.0.0.1:53 → DoH HTTP/2 через 1370. "
         f"Tor 1375/VLESS 1379 — холодные резервы только при secondary=tor/profile. "
         f"Маршруты: " + ", ".join(f"{k}={v}" for k, v in sorted(routes.items())) + "."
