@@ -2,7 +2,7 @@
     "schema": "kaliopa.route-lab/1",
     "version": 1,
     "name": "kaliopa-clean",
-    "notes": "Снимок установленной KALIOPA 1.44.2.36 на 2026-11-08. Основной слот: Custom/WARPgen_custom_07 (1370, выход RU); Opera US (1371, выход US) идёт через WARP-диал; PAC: ai_apps → PROXY 127.0.0.1:1371, браузер/Telegram → 1370; DNS-AI: DoH 127.0.0.1:53 → dns.dns-ai.ru. Маршруты: ai_apps=opera, browser=warp, discord=direct, games=direct, obs=auto, spotify=direct, telegram=warp, whatsapp=direct.",
+    "notes": "Логически верная схема KALIOPA 1.44.2.36 (2026-11-08). PAC 1369: localhost/LAN/exclude/.ru/user_direct → DIRECT; ai_apps/eu/youtube → Opera US 1371; ru/foreign-default → WARP 1370 (fallback 1371). Primary 1370 — один слушатель Custom/WARPgen_custom_07 (AWG UDP 188.114.96.248:2408); MASQUE/Proton/CF-AWG — взаимоисключающие альтернативы на 1370. Opera US диалится через WARP 1370 (bootstrap), прямой US мёртв. Telegram — явный 1372 → тот же 1370 → DC, без Opera/Tor. DNS-AI — NRPT 127.0.0.1:53 → DoH HTTP/2 через 1370. Tor 1375/VLESS 1379 — холодные резервы только при secondary=tor/profile.",
     "nodes": [
         {
             "id": "device",
@@ -20,7 +20,7 @@
             "id": "app_web",
             "type": "app",
             "label": "Браузер · Discord · WhatsApp",
-            "sub": "Chrome/Edge · системный PAC",
+            "sub": "Chrome/Edge · системный PAC 1369",
             "x": 230,
             "y": 60,
             "host": "",
@@ -49,7 +49,7 @@
             "y": 120,
             "host": "127.0.0.1",
             "port": "1369",
-            "note": "FindProxyForURL: RU/auto → 1370; EU/ai_apps → 1371; .ru/exclude → DIRECT; резервы — по выбору слота.",
+            "note": "FindProxyForURL: localhost/LAN → DIRECT; user_direct/exclude/.ru/.su/.рф → DIRECT; discord/whatsapp/spotify → DIRECT (сейчас); ai_apps/eu/ai_second → 1371; youtube → 1371;1370; ru/user_ru/foreign-default → 1370;1371. DIRECT не fallback — fallback VPN.",
             "tags": []
         },
         {
@@ -61,7 +61,7 @@
             "y": 720,
             "host": "127.0.0.1",
             "port": "1372",
-            "note": "Выход только WARP-socks 1370. TLS-терминатор 1374 — helper релея (JA4), не отдельный хоп.",
+            "note": "MTProto только через WARP 1370. TLS-терминатор 1374 — JA4 helper, не отдельный прокси-путь.",
             "tags": []
         },
         {
@@ -71,33 +71,33 @@
             "sub": "127.0.0.1:53 → dns.dns-ai.ru",
             "x": 230,
             "y": 850,
-            "host": "",
-            "port": "",
-            "note": "Отдельный путь, не через PAC. Ответ возвращается приложению; DoH — только при NOVA_DOH_GLOBAL=1.",
+            "host": "127.0.0.1",
+            "port": "53",
+            "note": "Локальный резолвер nova-go dns doh: UDP+TCP 127.0.0.1:53 (fallback 127.0.0.2:53). NRPT: домены → 127.0.0.1 без порта. Внешний запрос — DoH HTTP/2 через WARP 1370 (при падении 1371). При ai_apps=opera ИИ-домены в NRPT не идут — браузер уже на 1371.",
             "tags": []
         },
         {
             "id": "dns_res",
             "type": "edge",
             "label": "dns-ai.ru (DoH)",
-            "sub": "HTTP/2 · US-прокси",
+            "sub": "HTTP/2 · через SOCKS 1370",
             "x": 450,
             "y": 850,
             "host": "",
             "port": "",
-            "note": "Внешние резолверы NRPT-каскада. Не прокси и не VPN.",
+            "note": "Внешний DoH-резолвер dns-ai.ru. Не VPN-выход, а DNS-over-HTTPS через слот 1370.",
             "tags": []
         },
         {
             "id": "warp",
             "type": "proxy",
             "label": "WARP · Custom/WARPgen_custom_07",
-            "sub": "SOCKS5 127.0.0.1:1370 · выход RU",
+            "sub": "SOCKS5 127.0.0.1:1370 · AWG UDP",
             "x": 760,
             "y": 10,
             "host": "127.0.0.1",
             "port": "1370",
-            "note": "nova-go: локальный SOCKS5, наружу MASQUE (HTTP/3 over UDP 443). Выход сейчас RU. Заменяется резервным primary-узлом при его выборе.",
+            "note": "Текущий primary Custom/WARPgen_custom_07; wireproxy-awg. Один слушатель на 1370; MASQUE/Proton/CF-AWG — альтернативы, вытесняют его, не параллельны.",
             "tags": []
         },
         {
@@ -109,7 +109,7 @@
             "y": 110,
             "host": "127.0.0.1",
             "port": "1371",
-            "note": "opera-proxy, регион US (проверено: loc=US). Только CONNECT/TCP 443; MTProto не поддерживает.",
+            "note": "Только HTTP CONNECT TCP 443; MTProto не переносит. SurfEasy bootstrap (discover) идёт через WARP 1370 (-proxy socks5h://127.0.0.1:1370), прямой US мёртв. ai_apps/eu/youtube — сюда.",
             "tags": []
         },
         {
@@ -121,7 +121,7 @@
             "y": 210,
             "host": "",
             "port": "",
-            "note": "Для .ru/.su/.рф, exclude и last_resort. Не смешивать с VPN-слотами.",
+            "note": "Только localhost/LAN, .ru, exclude, user_direct и discord/whatsapp/spotify (сейчас). Для .ru быстрый прямой; fallback — VPN, не DIRECT.",
             "tags": []
         },
         {
@@ -133,7 +133,7 @@
             "y": 310,
             "host": "127.0.0.1",
             "port": "1375",
-            "note": "Включается при secondary=Tor. Сейчас 1375/1378 закрыты — путь холодный. Только TCP.",
+            "note": "Включается только при secondary=tor. Сейчас выключен (secondary=opera). Только TCP.",
             "tags": []
         },
         {
@@ -145,7 +145,7 @@
             "y": 410,
             "host": "127.0.0.1",
             "port": "1379",
-            "note": "secondary=profile. Если VLESS выбран основным — слушает 1370. Сейчас не активен.",
+            "note": "Включается только при secondary=profile. Сейчас выключен (secondary=opera).",
             "tags": []
         },
         {
@@ -157,7 +157,7 @@
             "y": 510,
             "host": "127.0.0.1",
             "port": "1370",
-            "note": "Primary-backend Proton AWG. Тот же 1370; одновременно с WARP не поднимается.",
+            "note": "Альтернативный primary на 1370. Одновременно с WARP не поднимается.",
             "tags": []
         },
         {
@@ -169,43 +169,31 @@
             "y": 610,
             "host": "127.0.0.1",
             "port": "1370",
-            "note": "Primary-backend Cloudflare AWG. Тот же 1370; альтернатива MASQUE.",
-            "tags": []
-        },
-        {
-            "id": "warp_tg",
-            "type": "proxy",
-            "label": "WARP для Telegram",
-            "sub": "SOCKS5 127.0.0.1:1370",
-            "x": 760,
-            "y": 720,
-            "host": "127.0.0.1",
-            "port": "1370",
-            "note": "Тот же listener, что у браузера; отдельный узел, чтобы маршруты не пересекались.",
+            "note": "Альтернативный primary на 1370. Одновременно с WARP не поднимается.",
             "tags": []
         },
         {
             "id": "cf",
             "type": "edge",
-            "label": "Cloudflare edge",
-            "sub": "WARP / MASQUE · 162.159.x",
+            "label": "WARP AWG edge",
+            "sub": "AWG · UDP 188.114.96.248:2408",
             "x": 1020,
             "y": 10,
             "host": "",
             "port": "",
-            "note": "CF-край WARP.",
+            "note": "AWG-выход Custom-профиля (текущий backend). Не MASQUE 162.159.x.",
             "tags": []
         },
         {
             "id": "opera_edge",
             "type": "edge",
             "label": "Opera VPN edge (US)",
-            "sub": "77.111.246.x:443 · через WARP-диал",
+            "sub": "77.111.246.61:443 · US (AM)",
             "x": 1020,
             "y": 110,
-            "host": "77.111.247.19",
+            "host": "77.111.246.61",
             "port": "443",
-            "note": "HTTP CONNECT, внутри — TLS к целевому сайту.",
+            "note": "Живой endpoint из ленты/discover 2026-11-08; диалится через WARP 1370.",
             "tags": []
         },
         {
@@ -291,6 +279,18 @@
             "port": "",
             "note": "MTProto.",
             "tags": []
+        },
+        {
+            "id": "tls_term",
+            "type": "tls",
+            "label": "TLS-терминатор",
+            "sub": "127.0.0.1:1374 · JA4 helper",
+            "x": 760,
+            "y": 820,
+            "host": "127.0.0.1",
+            "port": "1374",
+            "note": "Опциональный helper Telegram-релея (JA4/masking). Не основной путь.",
+            "tags": []
         }
     ],
     "edges": [
@@ -349,19 +349,19 @@
             "from": "pac",
             "to": "warp",
             "transport": "SOCKS5 1370",
-            "condition": "browser · RU · auto",
-            "label": "",
-            "order": 6,
+            "condition": "ru/user_ru/foreign-default → 1370",
+            "label": "→ SOCKS5 127.0.0.1:1370",
+            "order": 7,
             "style": "solid"
         },
         {
             "id": "e-warp-cf",
             "from": "warp",
             "to": "cf",
-            "transport": "AWG · UDP",
+            "transport": "AWG · UDP 188.114.96.248:2408",
             "condition": "",
             "label": "",
-            "order": 7,
+            "order": 11,
             "style": "solid"
         },
         {
@@ -379,9 +379,9 @@
             "from": "pac",
             "to": "opera",
             "transport": "HTTP CONNECT 1371",
-            "condition": "ai_apps · US",
+            "condition": "ai_apps/eu/ai_second/youtube → 1371",
             "label": "→ PROXY 127.0.0.1:1371",
-            "order": 9,
+            "order": 8,
             "style": "solid"
         },
         {
@@ -409,9 +409,9 @@
             "from": "pac",
             "to": "direct",
             "transport": "DIRECT",
-            "condition": ".ru · exclude · last_resort",
+            "condition": "localhost·LAN·exclude·.ru·user_direct",
             "label": "",
-            "order": 12,
+            "order": 6,
             "style": "solid"
         },
         {
@@ -489,7 +489,7 @@
             "from": "pac",
             "to": "proton",
             "transport": "SOCKS5 1370",
-            "condition": "primary = Proton AWG",
+            "condition": "alternative primary · replaces WARP on 1370",
             "label": "",
             "order": 20,
             "style": "reserve"
@@ -519,7 +519,7 @@
             "from": "pac",
             "to": "cf_awg",
             "transport": "SOCKS5 1370",
-            "condition": "primary = CF AWG",
+            "condition": "alternative primary · replaces WARP on 1370",
             "label": "",
             "order": 23,
             "style": "reserve"
@@ -547,21 +547,21 @@
         {
             "id": "e-relay-warp",
             "from": "relay",
-            "to": "warp_tg",
+            "to": "warp",
             "transport": "SOCKS5 1370",
-            "condition": "telegram · WARP",
+            "condition": "telegram · MTProto",
             "label": "",
-            "order": 26,
+            "order": 28,
             "style": "solid"
         },
         {
             "id": "e-warp-dc",
-            "from": "warp_tg",
+            "from": "warp",
             "to": "tg_dc",
             "transport": "MTProto",
             "condition": "",
             "label": "",
-            "order": 27,
+            "order": 29,
             "style": "solid"
         },
         {
@@ -578,11 +578,51 @@
             "id": "e-dns-res",
             "from": "dns",
             "to": "dns_res",
-            "transport": "UDP 53",
+            "transport": "DoH · HTTP/2",
             "condition": "",
             "label": "",
-            "order": 29,
+            "order": 32,
             "style": "dns"
+        },
+        {
+            "id": "e-warp-opera",
+            "from": "warp",
+            "to": "opera",
+            "transport": "bootstrap · SOCKS5H 1370",
+            "condition": "discover/edge dial · -proxy",
+            "label": "dial via 1370",
+            "order": 12,
+            "style": "solid"
+        },
+        {
+            "id": "e-dns-warp",
+            "from": "dns_res",
+            "to": "warp",
+            "transport": "DoH · HTTPS/2 · SOCKS 1370",
+            "condition": "через WARP (1371 fallback)",
+            "label": "",
+            "order": 33,
+            "style": "dns"
+        },
+        {
+            "id": "e-relay-tls",
+            "from": "relay",
+            "to": "tls_term",
+            "transport": "TLS 1374",
+            "condition": "опция",
+            "label": "",
+            "order": 34,
+            "style": "reserve"
+        },
+        {
+            "id": "e-tls-tg",
+            "from": "tls_term",
+            "to": "tg_dc",
+            "transport": "TLS 1374",
+            "condition": "опция",
+            "label": "",
+            "order": 35,
+            "style": "reserve"
         }
     ]
 }

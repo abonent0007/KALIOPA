@@ -87,12 +87,38 @@ def primary_name():
     return f"группа {group}" if group else "авто"
 
 
+def live_opera_endpoint():
+    cache = read_json(NOVA / "temp" / "opera_endpoint_cache.json", {})
+    endpoint = str(cache.get("endpoint") or "").strip()
+    return endpoint or "77.111.246.x:443"
+
+
+def primary_endpoint():
+    # Текущий AWG endpoint из активного Custom-профиля; fallback — измеренный 2026-11-08.
+    selection = read_json(NOVA / "temp" / "profile-selection.json", {})
+    profile = str(selection.get("profile") or "")
+    name = profile.split("/")[-1].strip()
+    if name:
+        for base in (NOVA / "profiles" / ".runtime" / f"{name}.conf",
+                     NOVA / "profiles" / "Custom" / f"{name}.conf"):
+            try:
+                text = base.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            match = re.search(r"Endpoint\s*=\s*(\S+)", text)
+            if match:
+                return match.group(1)
+    return "188.114.96.248:2408"
+
+
 def update_nodes(data, facts):
     nodes = {node["id"]: node for node in data.get("nodes", [])}
+    endpoint = facts.get("warp_endpoint") or "188.114.96.248:2408"
+    opera_endpoint = facts.get("opera_endpoint") or "77.111.246.x:443"
     if "warp" in nodes:
         nodes["warp"].update({
             "label": f"WARP · {facts['primary']}",
-            "sub": f"SOCKS5 127.0.0.1:1370 · выход {facts['warp_exit'] or '?'}",
+            "sub": f"SOCKS5 127.0.0.1:1370 · AWG UDP · выход {facts['warp_exit'] or '?'}",
         })
     if "opera" in nodes:
         nodes["opera"].update({
@@ -102,43 +128,54 @@ def update_nodes(data, facts):
     if "opera_edge" in nodes:
         nodes["opera_edge"].update({
             "label": "Opera VPN edge (US)",
-            "sub": "77.111.246.x:443 · через WARP-диал",
+            "sub": f"{opera_endpoint} · US (AM) · через WARP-диал",
+            "host": opera_endpoint.split(":")[0],
+            "port": opera_endpoint.split(":")[-1] if ":" in opera_endpoint else "443",
         })
     if "dns" in nodes:
         nodes["dns"].update({
             "label": "DNS-AI · DoH + NRPT",
             "sub": "127.0.0.1:53 → dns.dns-ai.ru",
+            "host": "127.0.0.1",
+            "port": "53",
         })
     if "dns_res" in nodes:
         nodes["dns_res"].update({
             "label": "dns-ai.ru (DoH)",
-            "sub": "HTTP/2 · US-прокси",
+            "sub": "HTTP/2 · через SOCKS 1370",
         })
     if "cf" in nodes:
-        nodes["cf"].update({"sub": "WARP / MASQUE · 162.159.x"})
+        nodes["cf"].update({"label": "WARP AWG edge", "sub": f"AWG · UDP {endpoint}"})
     if "app_web" in nodes:
-        nodes["app_web"].update({"sub": "Chrome/Edge · системный PAC"})
+        nodes["app_web"].update({"sub": "Chrome/Edge · системный PAC 1369"})
 
     for edge in data.get("edges", []):
         if edge.get("id") == "e-pac-warp":
-            edge["condition"] = "browser · RU · auto"
+            edge["condition"] = "ru/user_ru/foreign-default → 1370"
+            edge["label"] = "→ SOCKS5 127.0.0.1:1370"
         elif edge.get("id") == "e-pac-opera":
-            edge["condition"] = "ai_apps · US"
-            edge["label"] = f"→ {facts['ai_route']}" if facts.get("ai_route") else "HTTP CONNECT 1371"
+            edge["condition"] = "ai_apps/eu/ai_second/youtube → 1371"
+            edge["label"] = f"→ {facts['ai_route']}" if facts.get("ai_route") else "→ PROXY 127.0.0.1:1371"
         elif edge.get("id") == "e-pac-direct":
-            edge["condition"] = ".ru · exclude · last_resort"
+            edge["condition"] = "localhost·LAN·exclude·.ru·user_direct"
         elif edge.get("id") == "e-warp-cf":
-            edge["transport"] = "AWG · UDP"
+            edge["transport"] = f"AWG · UDP {facts.get('warp_endpoint') or '188.114.96.248:2408'}"
+        elif edge.get("id") == "e-dns-res":
+            edge["transport"] = "DoH · HTTP/2"
 
     settings = facts.get("settings") or {}
     routes = settings.get("routes") or {}
     data["name"] = "kaliopa-clean"
     data["notes"] = (
-        f"Снимок установленной KALIOPA {facts['version']} на {facts['date']}. "
-        f"Основной слот: {facts['primary']} (1370, выход {facts['warp_exit'] or '?'}); "
-        f"Opera US (1371, выход {facts['opera_exit'] or '?'}) идёт через WARP-диал; "
-        f"PAC: ai_apps → {facts['ai_route'] or '1371'}, браузер/Telegram → 1370; "
-        f"DNS-AI: DoH 127.0.0.1:53 → dns.dns-ai.ru. "
+        f"Логически верная схема KALIOPA {facts['version']} на {facts['date']}. "
+        f"PAC 1369: localhost/LAN/exclude/.ru/user_direct → DIRECT; "
+        f"ai_apps/eu/youtube → Opera US 1371 (выход {facts['opera_exit'] or '?'}); "
+        f"ru/foreign-default → WARP 1370 (выход {facts['warp_exit'] or '?'}). "
+        f"Основной слот: {facts['primary']} — один слушатель Custom AWG UDP {facts.get('warp_endpoint') or '188.114.96.248:2408'}, "
+        f"альтернативы на 1370 взаимоисключают его. "
+        f"Opera US диалится через WARP 1370 (bootstrap -proxy socks5h), прямой US мёртв. "
+        f"Telegram: явный 1372 → тот же 1370 → DC. DNS-AI: NRPT 127.0.0.1:53 → DoH HTTP/2 через 1370. "
+        f"Tor 1375/VLESS 1379 — холодные резервы только при secondary=tor/profile. "
         f"Маршруты: " + ", ".join(f"{k}={v}" for k, v in sorted(routes.items())) + "."
     )
     return data
@@ -158,6 +195,8 @@ def main() -> int:
         "primary": primary_name(),
         "warp_exit": exit_country(1370, "socks5"),
         "opera_exit": exit_country(1371, "http"),
+        "warp_endpoint": primary_endpoint(),
+        "opera_endpoint": live_opera_endpoint(),
         "ai_route": ai_route(),
         "settings": settings,
     }
