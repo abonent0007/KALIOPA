@@ -9449,6 +9449,23 @@ function FindProxyForURLEx(url, host) {{
                         pass
                 os.replace(pac_temp_path, self.pac_file)
 
+                # Схема Route Lab — часть программы (resources/nova_route_spec.json):
+                # сверяем настройки и структуру PAC с описанной цепочкой. Проверка
+                # только пишет в журнал — маршруты она не меняет, а её сбой не
+                # должен ломать генерацию PAC.
+                try:
+                    import nova_route_spec
+                    spec_issues = (
+                        nova_route_spec.settings_issues(routing_settings)
+                        + nova_route_spec.pac_issues(pac_content, routing_settings)
+                    )
+                    if spec_issues != getattr(self, "_last_route_spec_issues", None):
+                        self._last_route_spec_issues = spec_issues
+                        for spec_issue in spec_issues:
+                            self.log_func(f"[PAC] схема Route Lab: {spec_issue}")
+                except Exception:
+                    pass
+
                 import hashlib as _hashlib
                 cloudflare_ip_signature = tuple(tuple(entry) for entry in cloudflare_ips)
                 app_pref_signature = tuple((key, get_routing_group_mode(key, routing_settings)) for key in ROUTING_GROUP_KEYS)

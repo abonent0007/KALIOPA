@@ -35,7 +35,7 @@ class RouteEditorTests(unittest.TestCase):
         template = json.loads((BASE / "templates" / "kaliopa-clean.json").read_text(encoding="utf-8"))
         self.assertEqual("kaliopa-clean", template["name"])
         self.assertEqual(24, len(template["nodes"]))
-        self.assertEqual(29, len(template["edges"]))
+        self.assertEqual(33, len(template["edges"]))
         node_ids = {node["id"] for node in template["nodes"]}
         for required in ("pac", "warp", "opera", "relay", "dns", "proton", "cf_awg", "tor", "xray"):
             self.assertIn(required, node_ids)

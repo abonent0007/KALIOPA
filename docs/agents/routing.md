@@ -234,3 +234,20 @@ Get-Content "$env:LOCALAPPDATA\Nova\temp\nova_console.log" -Tail 50 | Select-Str
 Примечание: в Route Lab узел `opera_edge` подписан `77.111.247.19 · US`, но
 `.247.19` — это SE; текущий US-адрес — `77.111.246.61`. Подпись графа не
 влияет на маршрутизацию: регион задаётся `opera_region=US`.
+
+## Схема Route Lab в программе
+
+`resources/nova_route_spec.json` — та же цепочка, что и шаблон Route Lab;
+равенство файлов проверяет `tests/test_route_spec.py`, а `snapshot.py`
+обновляет обе копии. При каждой генерации PAC Nova сверяет со схемой живые
+настройки и структуру скрипта и пишет расхождения строкой
+`[PAC] схема Route Lab: ...`. Проверка только журналирует: маршруты она не
+меняет, поэтому сбой схемы или её отсутствие не ломают PAC.
+
+Что проверяется: порядок `user_direct`/`user_ru`/`exclude` до локальных TLD,
+`FindProxyForURLEx` (WinINET), в режиме `full` — разбор `ai_apps` до
+`return pac_full_route`, а при `secondary=opera` — отсутствие холодных
+резервов 1375/1378/1379/1380 в PAC. `routes.browser` управляет режимом PAC:
+`auto` — hybrid, `warp`/`opera` — full, `direct` — off. Схема описывает
+hybrid, поэтому при `browser=warp` проверка сообщает о расхождении: eu/youtube
+пойдут на 1370, а не на 1371.

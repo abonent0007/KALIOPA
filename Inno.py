@@ -124,7 +124,7 @@ CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # (which egress the reserve is, whether the primary exits abroad). Missing, they fall back to the
 # pre-1.39 routing in silence -- so it must be listed here, not merely present in the tree.
 RESOURCE_ROOT_FILES = ("nova_routing_profiles.py", "nova_transport_plans.py", "nova_privacy.py", "nova_temp_log.py",
-                       "nova_vpn_slots.py")
+                       "nova_vpn_slots.py", "nova_route_spec.json")
 RESOURCE_SOURCE_DIR = "resources"
 ROOT_DOC_FILES = ("LICENSE", "THIRD_PARTY_NOTICES.md", "README.md")
 # The proxy helpers (NovaWFP\proxy\tcp_proxy.py, udp_proxy.py) run as separate
@@ -1560,6 +1560,7 @@ def build_pyinstaller_dist(base_dir: Path, release_dir: Path) -> Path:
         "--hidden-import=nova_vless",
         "--hidden-import=nova_subscriptions",
         "--hidden-import=nova_ping",
+        "--hidden-import=nova_route_spec",
         "--hidden-import=nova_captcha_window",
         "--hidden-import=webview",
         "--hidden-import=webview.platforms.edgechromium",

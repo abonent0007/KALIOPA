@@ -3,7 +3,8 @@
 Читает установленную программу (не репозиторий): выбор профиля, настройки
 маршрутизации, живой PAC, фактические выходные страны слотов 1370/1371 — и
 обновляет `templates/kaliopa-clean.json` (шаблон, который Route Lab открывает
-по умолчанию) плюс копию в `routes/`.
+по умолчанию), копию в `routes/` и `resources/nova_route_spec.json` (схема,
+с которой Nova сверяет настройки и PAC).
 
 Запуск: `python tools/route-editor/snapshot.py`.
 Сеть нужна только для определения exit-стран; без неё подписи остаются
@@ -23,6 +24,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TEMPLATE = ROOT / "tools" / "route-editor" / "templates" / "kaliopa-clean.json"
 ROUTES_COPY = ROOT / "tools" / "route-editor" / "routes" / "kaliopa-clean.json"
+RESOURCE_SPEC = ROOT / "resources" / "nova_route_spec.json"
 NOVA = pathlib.Path(os.environ.get("LOCALAPPDATA", "")) / "Nova"
 
 
@@ -209,10 +211,12 @@ def main() -> int:
     data = update_nodes(data, facts)
     payload = json.dumps(data, ensure_ascii=False, indent=4) + "\n"
     TEMPLATE.write_text(payload, encoding="utf-8", newline="\n")
-    try:
-        ROUTES_COPY.write_text(payload, encoding="utf-8", newline="\n")
-    except OSError:
-        pass
+    # Копия для программы: Nova сверяет с ней настройки и структуру PAC.
+    for target in (ROUTES_COPY, RESOURCE_SPEC):
+        try:
+            target.write_text(payload, encoding="utf-8", newline="\n")
+        except OSError:
+            pass
     print(f"snapshot: {facts['version']} · основной {facts['primary']} "
           f"(выход {facts['warp_exit'] or '?'}) · Opera {facts['opera_exit'] or '?'} "
           f"· ai_apps → {facts['ai_route'] or '1371'}")

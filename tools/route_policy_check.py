@@ -20,26 +20,20 @@ import sys
 import urllib.request
 from pathlib import Path
 
+RESOURCES = Path(__file__).resolve().parents[1] / "resources"
+if str(RESOURCES) not in sys.path:
+    sys.path.insert(0, str(RESOURCES))
+
+import nova_route_spec  # noqa: E402
+
 REQUIRED_OPEN = (1369, 1370, 1371, 1372)
 RESERVE_CLOSED = (1375, 1378, 1379, 1380)
 PAC_URL = "http://127.0.0.1:1369/nova.pac"
 
 
 def check_settings(settings: dict) -> list[str]:
-    issues = []
-    secondary = settings.get("secondary") or {}
-    routes = settings.get("routes") or {}
-    if str(secondary.get("mode") or "").lower() != "opera":
-        issues.append("secondary.mode должен быть opera, сейчас %r" % secondary.get("mode"))
-    if str(settings.get("opera_region") or "").upper() != "US":
-        issues.append("opera_region должен быть US, сейчас %r" % settings.get("opera_region"))
-    if str(routes.get("telegram") or "").lower() != "warp":
-        issues.append("routes.telegram должен быть warp, сейчас %r" % routes.get("telegram"))
-    if str(routes.get("ai_apps") or "").lower() != "opera":
-        issues.append("routes.ai_apps должен быть opera, сейчас %r" % routes.get("ai_apps"))
-    if str(routes.get("browser") or "").lower() != "auto":
-        issues.append("routes.browser должен быть auto, сейчас %r" % routes.get("browser"))
-    return issues
+    """Устойчивая политика схемы — в ресурсе программы, не в этом скрипте."""
+    return nova_route_spec.settings_issues(settings)
 
 
 def check_primary(selection: dict) -> list[str]:
