@@ -228,7 +228,10 @@ _ORDER_RULES = (
     ("matchDomain(user_direct,", "user_direct"),
     ("matchDomain(user_ru,", "user_ru"),
     ("matchDomain(exclude,", "exclude"),
-    ("isLocalDirect(host))", "локальные TLD"),
+    # Именно правило гибридной ветки: в полном режиме выше стоит
+    # `... || isLocalDirect(host))) {`, и его позиция не должна считаться
+    # точкой локальных TLD (иначе user_ru ложно «оказывается» после них).
+    ('if (isLocalDirect(host)) return "DIRECT";', "локальные TLD"),
     ("matchDomain(ai_apps,", "ai_apps"),
     ("matchDomain(youtube,", "youtube"),
     ("matchDomain(ru,", "ru"),
@@ -257,15 +260,23 @@ _FULL_ORDER_PAIRS = (
 )
 
 
-def _positions(text, rules, issues):
+def _positions(text, rules, issues, start=0):
     found = {}
     for marker, label in rules:
-        index = text.find(marker)
+        index = text.find(marker, start)
         if index < 0:
             issues.append("PAC не содержит правило %s" % label)
         else:
             found[label] = index
     return found
+
+
+def _hybrid_start(text):
+    """Позиция после блока полного режима: в нём те же имена правил."""
+    marker = text.find("return pac_full_route;")
+    if marker < 0:
+        return 0
+    return marker + len("return pac_full_route;")
 
 
 def _order_issues(issues, positions, pairs):
@@ -288,6 +299,7 @@ def pac_issues(pac, settings=None):
     if mode not in ("hybrid", "full", "off"):
         issues.append("неизвестный режим PAC: %r" % mode)
 
+    branch_start = _hybrid_start(text) if mode == "hybrid" else 0
     if mode == "full":
         positions = _positions(text, _FULL_ORDER_RULES, issues)
         _order_issues(issues, positions, _FULL_ORDER_PAIRS)
@@ -300,15 +312,15 @@ def pac_issues(pac, settings=None):
         elif "ai_apps" in positions and positions["ai_apps"] > ret:
             issues.append("full-PAC: ai_apps разбирается после возврата pac_full_route")
     elif mode == "hybrid":
-        positions = _positions(text, _ORDER_RULES, issues)
+        positions = _positions(text, _ORDER_RULES, issues, branch_start)
         _order_issues(issues, positions, _ORDER_PAIRS)
 
     # Google AI и opencode.ai идут на основной слот раньше строки ai_apps:
     # иначе явно выбранная Opera (1371) вернёт Gemini капчу, а opencode — 502,
     # когда 1371 не смог подняться через WARP.
-    ai_primary_pos = text.find("matchDomain(ai_primary,")
+    ai_primary_pos = text.find("matchDomain(ai_primary,", branch_start)
     if ai_primary_pos >= 0:
-        ai_apps_pos = text.find("matchDomain(ai_apps,")
+        ai_apps_pos = text.find("matchDomain(ai_apps,", branch_start)
         if ai_apps_pos >= 0 and ai_primary_pos > ai_apps_pos:
             issues.append("правило «ai_primary» стоит после «ai_apps»")
 

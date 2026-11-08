@@ -106,6 +106,17 @@ class PacModeTests(unittest.TestCase):
     def test_hybrid_pac_is_ok(self):
         self.assertEqual([], spec.pac_issues(hybrid_pac(), CLEAN_SETTINGS))
 
+    def test_full_branch_direct_check_does_not_confuse_order(self):
+        # В полном режиме выше гибридных правил стоит
+        # `... || isLocalDirect(host))) {`; его позиция не должна считаться
+        # локальными TLD, иначе user_ru ложно «оказывается» после них.
+        pac = hybrid_pac().replace(
+            "function FindProxyForURL(url, host) {",
+            'function FindProxyForURL(url, host) {\n'
+            '    if (isLocalDirect(host))) { return "DIRECT"; }',
+        )
+        self.assertEqual([], spec.pac_issues(pac, CLEAN_SETTINGS))
+
     def test_full_pac_is_ok(self):
         self.assertEqual([], spec.pac_issues(full_pac(), CLEAN_SETTINGS))
 
