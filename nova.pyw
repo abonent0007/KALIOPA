@@ -9094,15 +9094,15 @@ try:
                 ai_second_js = "{" + ",".join(f'"{d}":1' for d in sorted(ai_second_domains)) + "}"
                 # Без хвоста DIRECT: один отказ second — и Chrome на 5 минут пускал бы все ИИ-домены напрямую (G97).
                 ai_second_route = (secondary_route if secondary_active else "DIRECT")
-                # Google AI и opencode.ai — на основной слот, пока он выходит за пределы RU.
-                # Выход Opera (1371) Google помечает капчей (/sorry/index), а сам 1371
-                # диалится через 1370 и отдаёт 502, когда WARP не поднялся. ChatGPT и
-                # Claude остаются на 1371: WARP отдаёт им 403 (замер 2026-11-08).
-                # При ai_apps=direct строка ИИ остаётся прямой, правило не подменяет её.
+                # Google AI и opencode.ai — на основной слот, пока он поднят.
+                # Выход Opera (1371) Google помечает капчей (/sorry/index), а сам
+                # 1371 диалится через 1370 и отдаёт 502, когда WARP не поднялся.
+                # ChatGPT и Claude остаются на 1371: WARP отдаёт им 403
+                # (замер 2026-11-08). При ai_apps=direct строка ИИ остаётся прямой.
                 ai_primary_hosts = set(_google_ai_hosts) | {"opencode.ai"}
                 ai_primary_js = "{" + ",".join(f'"{d}":1' for d in sorted(ai_primary_hosts)) + "}"
                 ai_primary_route = choose_ai_primary_route(
-                    ai_apps_mode, ai_apps_route, primary_route, warp_active, primary_foreign)
+                    ai_apps_mode, ai_apps_route, primary_route, warp_active)
                 # Выход second заблокирован сервисом по региону (ai_region_worker пробует API
                 # через него) — тогда напрямую по winws, но только если имя этого сервиса
                 # разворачивает DNS-разблокировщик (DNS-AI, comss, geohide: системный

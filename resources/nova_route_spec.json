@@ -97,7 +97,7 @@
             "y": 10,
             "host": "127.0.0.1",
             "port": "1370",
-            "note": "Текущий primary Custom/WARPgen_custom_07; wireproxy-awg. Один слушатель на 1370; MASQUE/Proton/CF-AWG — альтернативы, вытесняют его, не параллельны. Google AI (Gemini) и opencode.ai идут сюда, пока выход основного слота не из RU.",
+            "note": "Текущий primary Custom/WARPgen_custom_07; wireproxy-awg. Один слушатель на 1370; MASQUE/Proton/CF-AWG — альтернативы, вытесняют его, не параллельны. Google AI (Gemini) и opencode.ai идут сюда, пока основной слот поднят.",
             "tags": []
         },
         {

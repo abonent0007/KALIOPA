@@ -88,10 +88,12 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 8. Явные режимы приложений (`discord`/`telegram`/`whatsapp`/`ai_apps` ≠ auto)
    → их маршрут.
 9. `ai_primary` (Google AI: Gemini, AI Studio, NotebookLM, Flow, Jules и их
-   `*.googleapis.com`; плюс `opencode.ai`) → основной слот, если он поднят и
-   выходит не из RU. Иначе — маршрут строки `ai_apps`. Правило стоит **раньше**
-   `ai_apps`: выход Opera Google помечает капчей, а 1371 при мёртвом WARP
-   отдаёт 502. ChatGPT/Claude сюда не входят — им WARP отвечает 403.
+   `*.googleapis.com`; плюс `opencode.ai`) → основной слот, как только он
+   поднят. Иначе — маршрут строки `ai_apps`. Правило стоит **раньше** `ai_apps`:
+   выход Opera Google помечает капчей, а 1371 при мёртвом WARP отдаёт 502.
+   ChatGPT/Claude сюда не входят — им WARP отвечает 403. Замер 2026-11-08:
+   Gemini через 1370 отдаёт полную страницу (874 КБ, без `/sorry`), хотя GeoIP
+   выхода числится RU.
 10. AI-домены: `ai_apps` (в текущей сборке `opera`) → 1371; `ai_unlock`/NRPT
     работают отдельно.
 11. `eu` (`list/second.txt`) → EU-маршрут.
@@ -109,7 +111,7 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 | RU (main.txt, auto/fallback) | `SOCKS5 127.0.0.1:1370; PROXY 127.0.0.1:1371` |
 | EU / YouTube | `PROXY 127.0.0.1:1371; SOCKS5 127.0.0.1:1370` |
 | AI-приложения (`ai_apps=opera`) | `PROXY 127.0.0.1:1371` |
-| Google AI / `opencode.ai` (основной слот зарубежный) | `SOCKS5 127.0.0.1:1370` |
+| Google AI / `opencode.ai` (основной слот поднят) | `SOCKS5 127.0.0.1:1370` |
 | `.ru`, `exclude`, локальные TLD | `DIRECT` |
 | Остальной мир (`foreign_default`) | RU-маршрут → VPN |
 | Резервы Tor/VLESS | в PAC не попадают, пока вторичный слот не переключён на них явно |

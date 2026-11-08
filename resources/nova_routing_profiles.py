@@ -38,8 +38,8 @@ AI_APP_DOMAINS = (
     # Jan: its own mirror apps.jan.ai, models from Hugging Face (huggingface.co, *.hf.co CDN)
     "jan.ai", "huggingface.co", "hf.co",
     # Google AI: тот же набор, что точечно добавлен в ai_second. Отдельное правило
-    # ai_primary в PAC отправляет эти хосты на основной слот, когда он выходит не из
-    # RU: выход Opera Google помечает капчей, а WARP отдаёт Gemini 200 (ChatGPT — 403,
+    # ai_primary в PAC отправляет эти хосты на основной слот, как только он поднят:
+    # выход Opera Google помечает капчей, а WARP отдаёт Gemini 200 (ChatGPT — 403,
     # поэтому OpenAI/Anthropic остаются на 1371).
     "gemini.google.com", "aistudio.google.com", "ai.google.dev", "labs.google",
     "flow.google.com", "jules.google.com", "notebook.google.com", "notebooklm.google.com",
@@ -49,18 +49,19 @@ AI_APP_DOMAINS = (
 
 
 def choose_ai_primary_route(ai_apps_mode, ai_apps_route, primary_route,
-                            primary_active, primary_foreign):
+                            primary_active):
     """Маршрут Google AI (Gemini) и opencode.ai.
 
-    Основной слот годится только когда он поднят и выходит не из России:
-    выход Opera (1371) Google помечает капчей, а сам 1371 диалится через 1370
-    и отдаёт 502, когда WARP не поднялся. ChatGPT/Claude сюда не входят —
-    им WARP отвечает 403. Явный выбор «ИИ-приложения = Напрямую» не
-    подменяется.
+    Основной слот годится, как только он поднят: выход Opera (1371) Google
+    помечает капчей, а сам 1371 диалится через 1370 и отдаёт 502, когда WARP
+    не поднялся. Замер 2026-11-08: Gemini через 1370 отдаёт полную страницу
+    (874 КБ, без /sorry), хотя GeoIP выхода числится RU; ChatGPT/Claude сюда
+    не входят — им WARP отвечает 403. Явный выбор «ИИ-приложения = Напрямую»
+    не подменяется.
     """
     if str(ai_apps_mode or "").strip().lower() == "direct":
         return "DIRECT"
-    if primary_active and primary_foreign:
+    if primary_active:
         return primary_route
     return ai_apps_route
 

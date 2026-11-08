@@ -63,19 +63,21 @@ class AIRoutingTests(unittest.TestCase):
 
 
 class AIPrimaryRouteTests(unittest.TestCase):
-    """Google AI/opencode: основной слот, если он зарубежный; иначе строка AI."""
+    """Google AI/opencode: основной слот, как только он поднят; иначе строка AI."""
 
     AI = "PROXY 127.0.0.1:1371"
     PRIMARY = "SOCKS5 127.0.0.1:1370"
 
-    def route(self, mode="opera", active=True, foreign=True):
-        return choose_ai_primary_route(mode, self.AI, self.PRIMARY, active, foreign)
+    def route(self, mode="opera", active=True):
+        return choose_ai_primary_route(mode, self.AI, self.PRIMARY, active)
 
-    def test_foreign_primary_takes_google_ai(self):
+    def test_active_primary_takes_google_ai(self):
         self.assertEqual(self.PRIMARY, self.route())
 
-    def test_russian_primary_keeps_ai_row(self):
-        self.assertEqual(self.AI, self.route(foreign=False))
+    def test_ru_geolocated_primary_still_takes_google_ai(self):
+        # Замер 2026-11-08: Gemini через 1370 отдаёт полную страницу, хотя
+        # GeoIP выхода числится RU; Opera в это же время отдаёт /sorry.
+        self.assertEqual(self.PRIMARY, self.route())
 
     def test_down_primary_keeps_ai_row(self):
         self.assertEqual(self.AI, self.route(active=False))
@@ -83,7 +85,7 @@ class AIPrimaryRouteTests(unittest.TestCase):
     def test_direct_mode_is_not_overridden(self):
         self.assertEqual("DIRECT", self.route(mode="direct"))
 
-    def test_auto_mode_also_prefers_foreign_primary(self):
+    def test_auto_mode_also_prefers_primary(self):
         self.assertEqual(self.PRIMARY, self.route(mode="auto"))
 
 
