@@ -303,6 +303,15 @@ def pac_issues(pac, settings=None):
         positions = _positions(text, _ORDER_RULES, issues)
         _order_issues(issues, positions, _ORDER_PAIRS)
 
+    # Google AI и opencode.ai идут на основной слот раньше строки ai_apps:
+    # иначе явно выбранная Opera (1371) вернёт Gemini капчу, а opencode — 502,
+    # когда 1371 не смог подняться через WARP.
+    ai_primary_pos = text.find("matchDomain(ai_primary,")
+    if ai_primary_pos >= 0:
+        ai_apps_pos = text.find("matchDomain(ai_apps,")
+        if ai_apps_pos >= 0 and ai_primary_pos > ai_apps_pos:
+            issues.append("правило «ai_primary» стоит после «ai_apps»")
+
     if _secondary_mode(settings) not in ("tor", "profile"):
         for port in RESERVE_PORTS:
             if "127.0.0.1:%d" % port in text:

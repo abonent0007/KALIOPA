@@ -47,6 +47,23 @@ AI_APP_DOMAINS = (
 )
 
 
+def choose_ai_primary_route(ai_apps_mode, ai_apps_route, primary_route,
+                            primary_active, primary_foreign):
+    """Маршрут Google AI (Gemini) и opencode.ai.
+
+    Основной слот годится только когда он поднят и выходит не из России:
+    выход Opera (1371) Google помечает капчей, а сам 1371 диалится через 1370
+    и отдаёт 502, когда WARP не поднялся. ChatGPT/Claude сюда не входят —
+    им WARP отвечает 403. Явный выбор «ИИ-приложения = Напрямую» не
+    подменяется.
+    """
+    if str(ai_apps_mode or "").strip().lower() == "direct":
+        return "DIRECT"
+    if primary_active and primary_foreign:
+        return primary_route
+    return ai_apps_route
+
+
 # Path substrings (lowercase) that mark an AI app. One tuple, read by the process matcher here and
 # by tcp_proxy's own family classifier, so the two cannot drift apart.
 AI_APP_PATH_MARKERS = (

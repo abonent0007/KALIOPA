@@ -2,7 +2,7 @@
     "schema": "kaliopa.route-lab/1",
     "version": 1,
     "name": "kaliopa-clean",
-    "notes": "Логически верная схема KALIOPA 1.44.2.36 (2026-11-08). PAC 1369: localhost/LAN/exclude/.ru/user_direct → DIRECT; ai_apps/eu/youtube → Opera US 1371; ru/foreign-default → WARP 1370 (fallback 1371). Primary 1370 — один слушатель Custom/WARPgen_custom_07 (AWG UDP 188.114.96.248:2408); MASQUE/Proton/CF-AWG — взаимоисключающие альтернативы на 1370. Opera US диалится через WARP 1370 (bootstrap), прямой US мёртв. Telegram — явный 1372 → тот же 1370 → DC, без Opera/Tor. DNS-AI — NRPT 127.0.0.1:53 → DoH HTTP/2 через 1370. Tor 1375/VLESS 1379 — холодные резервы только при secondary=tor/profile. PAC — только TCP; QUIC UDP/443 — WinDivert/WFP; fallback 1370→1371 гео, не health; WinINET Ex вырезает SOCKS5.",
+    "notes": "Логически верная схема KALIOPA 1.44.2.36 (2026-11-08). PAC 1369: localhost/LAN/exclude/.ru/user_direct → DIRECT; ai_apps/eu/youtube → Opera US 1371 (Google AI/opencode.ai → WARP 1370); ru/foreign-default → WARP 1370 (fallback 1371). Primary 1370 — один слушатель Custom/WARPgen_custom_07 (AWG UDP 188.114.96.248:2408); MASQUE/Proton/CF-AWG — взаимоисключающие альтернативы на 1370. Opera US диалится через WARP 1370 (bootstrap), прямой US мёртв. Telegram — явный 1372 → тот же 1370 → DC, без Opera/Tor. DNS-AI — NRPT 127.0.0.1:53 → DoH HTTP/2 через 1370. Tor 1375/VLESS 1379 — холодные резервы только при secondary=tor/profile. PAC — только TCP; QUIC UDP/443 — WinDivert/WFP; fallback 1370→1371 гео, не health; WinINET Ex вырезает SOCKS5.",
     "nodes": [
         {
             "id": "device",
@@ -49,7 +49,7 @@
             "y": 120,
             "host": "127.0.0.1",
             "port": "1369",
-            "note": "FindProxyForURL: localhost/LAN → DIRECT; user_direct/exclude/.ru/.su/.рф → DIRECT; discord/whatsapp/spotify → DIRECT (сейчас); ai_apps/eu/ai_second → 1371; youtube → 1371;1370; ru/user_ru/foreign-default → 1370;1371. DIRECT не fallback — fallback VPN. Fallback гео, не health: 1371 диалится через 1370, при падении WARP нужен Tor/VLESS (холодный) или рестарт WARP. PAC — только TCP; QUIC UDP/443 перехватывает WinDivert/WFP (NovaDivert), не глобальный блок wf.msc. WinINET — FindProxyForURLEx вырезает SOCKS5, оставляет PROXY; браузеры — смешанную цепочку SOCKS5+PROXY.",
+            "note": "FindProxyForURL: localhost/LAN → DIRECT; user_direct/exclude/.ru/.su/.рф → DIRECT; discord/whatsapp/spotify → DIRECT (сейчас); ai_apps/eu/ai_second → 1371, кроме Google AI (Gemini) и opencode.ai → 1370; youtube → 1371;1370; ru/user_ru/foreign-default → 1370;1371. DIRECT не fallback — fallback VPN. Fallback гео, не health: 1371 диалится через 1370, при падении WARP нужен Tor/VLESS (холодный) или рестарт WARP. PAC — только TCP; QUIC UDP/443 перехватывает WinDivert/WFP (NovaDivert), не глобальный блок wf.msc. WinINET — FindProxyForURLEx вырезает SOCKS5, оставляет PROXY; браузеры — смешанную цепочку SOCKS5+PROXY.",
             "tags": []
         },
         {
@@ -97,7 +97,7 @@
             "y": 10,
             "host": "127.0.0.1",
             "port": "1370",
-            "note": "Текущий primary Custom/WARPgen_custom_07; wireproxy-awg. Один слушатель на 1370; MASQUE/Proton/CF-AWG — альтернативы, вытесняют его, не параллельны.",
+            "note": "Текущий primary Custom/WARPgen_custom_07; wireproxy-awg. Один слушатель на 1370; MASQUE/Proton/CF-AWG — альтернативы, вытесняют его, не параллельны. Google AI (Gemini) и opencode.ai идут сюда, пока выход основного слота не из RU.",
             "tags": []
         },
         {
@@ -109,7 +109,7 @@
             "y": 110,
             "host": "127.0.0.1",
             "port": "1371",
-            "note": "Только HTTP CONNECT TCP 443; MTProto не переносит. SurfEasy bootstrap (discover) идёт через WARP 1370 (-proxy socks5h://127.0.0.1:1370), прямой US мёртв. ai_apps/eu/youtube — сюда.",
+            "note": "Только HTTP CONNECT TCP 443; MTProto не переносит. SurfEasy bootstrap (discover) идёт через WARP 1370 (-proxy socks5h://127.0.0.1:1370), прямой US мёртв. ai_apps/eu/youtube — сюда; Google AI и opencode.ai — нет (Opera-выход ловит капчу Google, а при мёртвом WARP 1371 отдаёт 502).",
             "tags": []
         },
         {

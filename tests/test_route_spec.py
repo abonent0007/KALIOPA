@@ -143,6 +143,20 @@ class PacModeTests(unittest.TestCase):
         settings = {"secondary": {"mode": "tor"}}
         self.assertEqual([], spec.pac_issues(pac, settings))
 
+    def test_ai_primary_after_ai_apps_is_reported(self):
+        pac = hybrid_pac() + (
+            '    if (matchDomain(ai_primary, host)) return "SOCKS5 127.0.0.1:1370";\n')
+        issues = spec.pac_issues(pac, CLEAN_SETTINGS)
+        self.assertTrue(any("ai_primary" in issue for issue in issues))
+
+    def test_ai_primary_before_ai_apps_is_ok(self):
+        pac = hybrid_pac().replace(
+            '    if (matchDomain(ai_apps, host)) return "PROXY 127.0.0.1:1371";',
+            '    if (matchDomain(ai_primary, host)) return "SOCKS5 127.0.0.1:1370";\n'
+            '    if (matchDomain(ai_apps, host)) return "PROXY 127.0.0.1:1371";',
+        )
+        self.assertEqual([], spec.pac_issues(pac, CLEAN_SETTINGS))
+
 
 class SettingsTests(unittest.TestCase):
     def test_clean_settings_match(self):

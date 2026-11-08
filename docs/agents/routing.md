@@ -87,14 +87,19 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
    `.дети`/`xn--d1acj3b`, `.tatar`. Дополнительно — `NOVA_LOCAL_DIRECT_TLDS`.
 8. Явные режимы приложений (`discord`/`telegram`/`whatsapp`/`ai_apps` ≠ auto)
    → их маршрут.
-9. AI-домены: `ai_apps` (в текущей сборке `opera`) → 1371; `ai_unlock`/NRPT
-   работают отдельно.
-10. `eu` (`list/second.txt`) → EU-маршрут.
-11. `youtube` (`list/youtube.txt`) → YouTube-маршрут.
-12. `ru` (`list/main.txt`) → RU-маршрут.
-13. `discord`, `telegram`, `whatsapp` → профильные маршруты.
-14. Cloudflare-IP fallback (`ip/cloudflare.txt`) → RU-маршрут.
-15. `foreign_default` → RU-маршрут (VPN), если не выключен
+9. `ai_primary` (Google AI: Gemini, AI Studio, NotebookLM, Flow, Jules и их
+   `*.googleapis.com`; плюс `opencode.ai`) → основной слот, если он поднят и
+   выходит не из RU. Иначе — маршрут строки `ai_apps`. Правило стоит **раньше**
+   `ai_apps`: выход Opera Google помечает капчей, а 1371 при мёртвом WARP
+   отдаёт 502. ChatGPT/Claude сюда не входят — им WARP отвечает 403.
+10. AI-домены: `ai_apps` (в текущей сборке `opera`) → 1371; `ai_unlock`/NRPT
+    работают отдельно.
+11. `eu` (`list/second.txt`) → EU-маршрут.
+12. `youtube` (`list/youtube.txt`) → YouTube-маршрут.
+13. `ru` (`list/main.txt`) → RU-маршрут.
+14. `discord`, `telegram`, `whatsapp` → профильные маршруты.
+15. Cloudflare-IP fallback (`ip/cloudflare.txt`) → RU-маршрут.
+16. `foreign_default` → RU-маршрут (VPN), если не выключен
     `NOVA_PAC_FOREIGN_VPN_DEFAULT=0` / `"foreign_default":"direct"`.
 
 ### 2.2. Текущие значения маршрутов (live)
@@ -104,6 +109,7 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 | RU (main.txt, auto/fallback) | `SOCKS5 127.0.0.1:1370; PROXY 127.0.0.1:1371` |
 | EU / YouTube | `PROXY 127.0.0.1:1371; SOCKS5 127.0.0.1:1370` |
 | AI-приложения (`ai_apps=opera`) | `PROXY 127.0.0.1:1371` |
+| Google AI / `opencode.ai` (основной слот зарубежный) | `SOCKS5 127.0.0.1:1370` |
 | `.ru`, `exclude`, локальные TLD | `DIRECT` |
 | Остальной мир (`foreign_default`) | RU-маршрут → VPN |
 | Резервы Tor/VLESS | в PAC не попадают, пока вторичный слот не переключён на них явно |

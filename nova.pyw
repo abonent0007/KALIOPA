@@ -297,7 +297,7 @@ from nova_platform import is_windows_admin
 from nova_foreign_services import (NOVA_WARP_DISPLAY_NAME, NOVA_WARP_SERVICE, delete_windivert_if_nova,
                                    kill_images_in_dir, official_warp_service_running, official_warp_svc_path,
                                    release_legacy_warp_service)
-from nova_routing_profiles import AI_APP_DOMAINS, SPOTIFY_DOMAINS, VPN_ROUTE_MODES, drop_family_names, get_default_app_routing_profiles, match_app_by_process_path
+from nova_routing_profiles import AI_APP_DOMAINS, SPOTIFY_DOMAINS, VPN_ROUTE_MODES, drop_family_names, get_default_app_routing_profiles, match_app_by_process_path, choose_ai_primary_route
 from nova_privacy import mask_provider_ip, redact_user_path, redact_user_paths_in_text
 from nova_route_flap import hold_route, FlapPenalty, OPERA_HOLD, WARP_HOLD, WARP_PENALTY_SETTINGS
 from nova_temp_log import trim_to_tail
@@ -9094,6 +9094,15 @@ try:
                 ai_second_js = "{" + ",".join(f'"{d}":1' for d in sorted(ai_second_domains)) + "}"
                 # Без хвоста DIRECT: один отказ second — и Chrome на 5 минут пускал бы все ИИ-домены напрямую (G97).
                 ai_second_route = (secondary_route if secondary_active else "DIRECT")
+                # Google AI и opencode.ai — на основной слот, пока он выходит за пределы RU.
+                # Выход Opera (1371) Google помечает капчей (/sorry/index), а сам 1371
+                # диалится через 1370 и отдаёт 502, когда WARP не поднялся. ChatGPT и
+                # Claude остаются на 1371: WARP отдаёт им 403 (замер 2026-11-08).
+                # При ai_apps=direct строка ИИ остаётся прямой, правило не подменяет её.
+                ai_primary_hosts = set(_google_ai_hosts) | {"opencode.ai"}
+                ai_primary_js = "{" + ",".join(f'"{d}":1' for d in sorted(ai_primary_hosts)) + "}"
+                ai_primary_route = choose_ai_primary_route(
+                    ai_apps_mode, ai_apps_route, primary_route, warp_active, primary_foreign)
                 # Выход second заблокирован сервисом по региону (ai_region_worker пробует API
                 # через него) — тогда напрямую по winws, но только если имя этого сервиса
                 # разворачивает DNS-разблокировщик (DNS-AI, comss, geohide: системный
@@ -9165,6 +9174,16 @@ try:
                 # ai_unlock_guard: явно выбранный режим главнее автоматической
                 # разблокировки AI.
                 app_domain_priority = ""
+                # Google AI и opencode.ai — раньше строки ai_apps: иначе явно
+                # выбранная «ИИ-приложения = Opera» перебьёт их и вернёт капчу/502.
+                if str(ai_apps_mode or "auto").strip().lower() != "auto":
+                    # В полном режиме правило действует только для полного слота
+                    # WARP/Opera: при browser=tor/profile нельзя выпускать Gemini
+                    # из Tor наружу через 1370.
+                    if pac_mode != "full" or pac_full_exclude:
+                        app_domain_priority += (
+                            f'    if (matchDomain(ai_primary, host)) return "{ai_primary_route}";\n'
+                        )
                 for _list_name, _mode, _route in (
                     ("discord", discord_mode, discord_route),
                     ("telegram", telegram_mode, telegram_route),
@@ -9242,6 +9261,7 @@ var ai_region_direct = {ai_region_direct_js};
     var whatsapp = {whatsapp_js};
     var spotify = {spotify_js};
     var ai_apps = {ai_apps_js};
+    var ai_primary = {ai_primary_js};
     var youtube = {youtube_js};
     var user_ru_ips = {user_ru_ips_js};
     var user_eu_ips = {user_eu_ips_js};
