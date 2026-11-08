@@ -27652,6 +27652,10 @@ function FindProxyForURLEx(url, host) {{
                                     log_func(
                                         f"[EU] Direct EU недоступен. Пробуем EU-over-WARP через 127.0.0.1:{int(warp_port)}."
                                     )
+                                elif restart_decision.reason == "desired-am-over-warp":
+                                    log_func(
+                                        f"[EU] Direct US (AM) недоступен. Пробуем US-over-WARP через 127.0.0.1:{int(warp_port)}."
+                                    )
                                 elif current_country == "AM" and previous_country != "AM":
                                     retry_in = max(
                                         0,

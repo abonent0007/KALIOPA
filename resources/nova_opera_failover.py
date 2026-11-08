@@ -1,8 +1,12 @@
 from dataclasses import dataclass
 
 
+_COUNTRY_ALIASES = {"US": "AM"}
+
+
 def _normalize_country(value):
     country = str(value or "EU").strip().upper()
+    country = _COUNTRY_ALIASES.get(country, country)
     return country if country in {"EU", "AM"} else "EU"
 
 
@@ -96,11 +100,17 @@ class OperaFailoverController:
         if self.direct_failures < self.direct_failure_limit:
             return self.current_decision("desired-direct-retry")
 
-        if self.desired_country == "EU" and warp_usable and warp_proxy:
+        if self.desired_country in {"EU", "AM"} and warp_usable and warp_proxy:
+            # AM (US) has the same direct-dial problem as EU: the edge IPs are cut, while
+            # the same region over the WARP slot answers 200 (measured 2026-11-08). Before
+            # this branch only EU got the fallback, and a user-selected US retried direct
+            # forever — the secondary never came up and AI apps fell back to a RU exit.
             self.transport = "warp"
             self.full_proxy = warp_proxy
             self.warp_failures = 0
-            return self.current_decision("desired-eu-over-warp")
+            return self.current_decision(
+                "desired-eu-over-warp" if self.desired_country == "EU"
+                else "desired-am-over-warp")
 
         return self._switch_to_alternate(now, "desired-direct-failed")
 
