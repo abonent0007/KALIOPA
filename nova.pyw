@@ -9094,8 +9094,9 @@ try:
                 ai_second_js = "{" + ",".join(f'"{d}":1' for d in sorted(ai_second_domains)) + "}"
                 # Без хвоста DIRECT: один отказ second — и Chrome на 5 минут пускал бы все ИИ-домены напрямую (G97).
                 ai_second_route = (secondary_route if secondary_active else "DIRECT")
-                # Google AI и opencode.ai — по строке ai_apps (Opera EU
-                # 77.111.244.47, NL): она отдаёт и Gemini, и ChatGPT без капчи.
+                # Google AI и opencode.ai — по строке ai_apps (Opera EU,
+                # живой адрес пула — сейчас 77.111.247.19, NL): она отдаёт и
+                # Gemini, и ChatGPT без капчи.
                 # Основной слот — только запасной путь, когда вторичный лёг:
                 # WARP с GeoIP RU сайт грузит, но панель Chrome регион не
                 # принимает. ChatGPT/Claude на WARP не уходят: он отдаёт 403.

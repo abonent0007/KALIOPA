@@ -2,7 +2,7 @@
     "schema": "kaliopa.route-lab/1",
     "version": 1,
     "name": "kaliopa-clean",
-    "notes": "Логически верная схема KALIOPA 1.44.2.40 на 2026-11-08. PAC 1369: localhost/LAN/exclude/.ru/user_direct → DIRECT; ai_apps/eu/youtube → Opera EU 1371 (NL 77.111.247.19); Google AI/opencode/crbug → 1371, 1370 — только если 1371 лёг. выход Opera NL. ru/foreign-default → WARP 1370 (выход RU). Основной слот: Custom/WARPgen_custom_07 — один слушатель Custom AWG UDP 188.114.96.248:2408, альтернативы на 1370 взаимоисключают его. Opera EU диалится через WARP 1370 (bootstrap -proxy socks5h), 77.111.247.19:443 — NL (AMS). Fallback 1370→1371 — гео, не health: при падении WARP нужен Tor/VLESS или рестарт WARP. PAC — только TCP; QUIC UDP/443 — WinDivert/WFP; WinINET Ex вырезает SOCKS5. Telegram: явный 1372 → тот же 1370 → DC. DNS-AI: NRPT 127.0.0.1:53 → DoH HTTP/2 через 1370. Tor 1375/VLESS 1379 — холодные резервы только при secondary=tor/profile. Маршруты: ai_apps=opera, browser=auto, discord=direct, games=direct, obs=auto, spotify=direct, telegram=warp, whatsapp=direct.",
+    "notes": "Логически верная схема KALIOPA 1.44.2.41 на 2026-11-09. PAC 1369: localhost/LAN/exclude/.ru/user_direct → DIRECT; ai_apps/eu/youtube → Opera EU 1371 (NL 77.111.247.19); Google AI/opencode/crbug → 1371, 1370 — только если 1371 лёг. выход Opera NL. ru/foreign-default → WARP 1370 (выход RU). Основной слот: Custom/WARPgen_custom_08 — один слушатель Custom AWG UDP 162.159.192.1:2408, альтернативы на 1370 взаимоисключают его. Opera EU диалится через WARP 1370 (bootstrap -proxy socks5h), 77.111.247.19:443 — NL (AMS). Fallback 1370→1371 — гео, не health: при падении WARP нужен Tor/VLESS или рестарт WARP. PAC — только TCP; QUIC UDP/443 — WinDivert/WFP; WinINET Ex вырезает SOCKS5. Telegram: явный 1372 → тот же 1370 → DC. DNS-AI: NRPT 127.0.0.1:53 → DoH HTTP/2 через 1370. Tor 1375/VLESS 1379 — холодные резервы только при secondary=tor/profile. Маршруты: ai_apps=opera, browser=auto, discord=direct, games=direct, obs=auto, spotify=direct, telegram=warp, whatsapp=direct.",
     "nodes": [
         {
             "id": "device",
@@ -91,7 +91,7 @@
         {
             "id": "warp",
             "type": "proxy",
-            "label": "WARP · Custom/WARPgen_custom_07",
+            "label": "WARP · Custom/WARPgen_custom_08",
             "sub": "SOCKS5 127.0.0.1:1370 · AWG UDP · выход RU",
             "x": 760,
             "y": 10,
@@ -176,7 +176,7 @@
             "id": "cf",
             "type": "edge",
             "label": "WARP AWG edge",
-            "sub": "AWG · UDP 188.114.96.248:2408",
+            "sub": "AWG · UDP 162.159.192.1:2408",
             "x": 1020,
             "y": 10,
             "host": "",
@@ -358,7 +358,7 @@
             "id": "e-warp-cf",
             "from": "warp",
             "to": "cf",
-            "transport": "AWG · UDP 188.114.96.248:2408",
+            "transport": "AWG · UDP 162.159.192.1:2408",
             "condition": "",
             "label": "",
             "order": 11,

@@ -38,8 +38,9 @@ AI_APP_DOMAINS = (
     # Jan: its own mirror apps.jan.ai, models from Hugging Face (huggingface.co, *.hf.co CDN)
     "jan.ai", "huggingface.co", "hf.co",
     # Google AI: тот же набор, что точечно добавлен в ai_second. Правило ai_primary
-    # ведёт эти хосты по строке ai_apps — Opera EU 77.111.244.47 (NL): Gemini и
-    # ChatGPT 200 без капчи. Основной слот — только если вторичный лёг.
+    # ведёт эти хосты по строке ai_apps — Opera EU (живой адрес пула, сейчас
+    # 77.111.247.19, NL): Gemini и ChatGPT 200 без капчи. Основной слот — только
+    # если вторичный лёг.
     "gemini.google.com", "aistudio.google.com", "ai.google.dev", "labs.google",
     "flow.google.com", "jules.google.com", "notebook.google.com", "notebooklm.google.com",
     "aisandbox-pa.googleapis.com", "robinfrontend-pa.googleapis.com",
@@ -52,13 +53,13 @@ AI_APP_DOMAINS = (
 
 def choose_ai_primary_route(ai_apps_mode, ai_apps_route, primary_route,
                             primary_active, secondary_active):
-    """Маршрут Google AI (Gemini) и opencode.ai.
+    """Маршрут Google AI (Gemini), opencode.ai и crbug.com.
 
-    Opera EU 77.111.244.47 (NL) отдаёт и Gemini, и ChatGPT без капчи (замер
-    2026-11-08), поэтому по умолчанию работает строка «ИИ-приложения». Основной
-    слот — только запасной путь, когда вторичный слот лёг: WARP с GeoIP RU
-    сайт грузит, но панель Chrome регион не принимает. Явный выбор «Напрямую»
-    не подменяется.
+    Opera EU (живой адрес пула, сейчас 77.111.247.19, NL) отдаёт и Gemini,
+    и ChatGPT без капчи (замер 2026-11-08), поэтому по умолчанию работает
+    строка «ИИ-приложения». Основной слот — только запасной путь, когда
+    вторичный слот лёг: WARP с GeoIP RU сайт грузит, но панель Chrome регион
+    не принимает. Явный выбор «Напрямую» не подменяется.
     """
     if str(ai_apps_mode or "").strip().lower() == "direct":
         return "DIRECT"

@@ -202,7 +202,7 @@ if (isset($_GET['action']) && $_GET['action'] !== '') {
     <section class="rail-block">
       <div class="rail-kicker">Пресеты</div>
       <div class="preset-list">
-        <button class="preset" data-preset="kaliopa" type="button"><b>Шаблон Kaliopa</b><span>текущая цепочка 1.44.2.40</span></button>
+        <button class="preset" data-preset="kaliopa" type="button"><b>Шаблон Kaliopa</b><span>текущая цепочка 1.44.2.41</span></button>
         <button class="preset" data-preset="current" type="button"><b>Текущая KALIOPA</b><span>браузер + Telegram + DNS</span></button>
         <button class="preset" data-preset="browser" type="button"><b>Браузер через Opera</b><span>ChatGPT / EU / YouTube</span></button>
         <button class="preset" data-preset="telegram" type="button"><b>Telegram-релей</b><span>1372 → WARP → DC</span></button>

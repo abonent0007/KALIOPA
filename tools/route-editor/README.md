@@ -6,7 +6,7 @@
 ## Шаблон по умолчанию
 
 При открытии сразу загружается **`templates/kaliopa-clean.json`** — текущая
-цепочка KALIOPA 1.44.2.40 на 24 узла и 33 связи: PAC 1369, WARP/MASQUE 1370,
+цепочка KALIOPA 1.44.2.41 на 24 узла и 33 связи: PAC 1369, WARP/MASQUE 1370,
 Opera EU 1371, Telegram 1372 → WARP, DNS/NRPT и резервы Tor / VLESS /
 Proton AWG / CF AWG. Кнопка **«Шаблон Kaliopa»** перезагружает его после правок.
 Та же схема лежит в программе — `resources/nova_route_spec.json`; равенство
