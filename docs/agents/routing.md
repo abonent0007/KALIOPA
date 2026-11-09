@@ -88,13 +88,14 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 8. Явные режимы приложений (`discord`/`telegram`/`whatsapp`/`ai_apps` ≠ auto)
    → их маршрут.
 9. `ai_primary` (Google AI: Gemini, AI Studio, NotebookLM, Flow, Jules и их
-   `*.googleapis.com`; плюс `opencode.ai`) → строка `ai_apps` (Opera EU,
-   живой адрес пула — сейчас `77.111.247.19`, NL). Основной слот — только
-   запасной путь, если вторичный слот лёг. Правило стоит **раньше** `ai_apps`.
-   Замер 2026-11-08: живой EU-адрес отдаёт Gemini `200` без `/sorry`,
-   ChatGPT `200`, Google-поиск без капчи; WARP с GeoIP RU сайт грузит, но
-   панель Chrome регион не принимает. Пул ротирует адреса: `.244.47` днём был
-   чистым, к 18:06 умер.
+   `*.googleapis.com`; плюс `opencode.ai` и `crbug.com`/`issues.chromium.org` —
+   Chromium bug tracker) → строка `ai_apps` (Opera EU, живой адрес пула —
+   сейчас `77.111.247.19`, NL). Основной слот — только запасной путь, если
+   вторичный слот лёг. Правило стоит **раньше** `ai_apps`. Замер 2026-11-08:
+   живой EU-адрес отдаёт Gemini `200` без `/sorry`, ChatGPT `200`,
+   Google-поиск без капчи; WARP с GeoIP RU сайт грузит, но панель Chrome
+   регион не принимает. Пул ротирует адреса: `.244.47` днём был чистым,
+   к 18:06 умер.
 10. AI-домены: `ai_apps` (в текущей сборке `opera`) → 1371; `ai_unlock`/NRPT
     работают отдельно.
 11. `eu` (`list/second.txt`) → EU-маршрут.

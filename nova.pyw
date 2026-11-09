@@ -9099,7 +9099,11 @@ try:
                 # Основной слот — только запасной путь, когда вторичный лёг:
                 # WARP с GeoIP RU сайт грузит, но панель Chrome регион не
                 # принимает. ChatGPT/Claude на WARP не уходят: он отдаёт 403.
-                ai_primary_hosts = set(_google_ai_hosts) | {"opencode.ai"}
+                # crbug.com/issues.chromium.org (Chromium bug tracker) — тем же
+                # маршрутом, что Gemini.
+                ai_primary_hosts = set(_google_ai_hosts) | {
+                    "opencode.ai", "crbug.com", "issues.chromium.org",
+                }
                 ai_primary_js = "{" + ",".join(f'"{d}":1' for d in sorted(ai_primary_hosts)) + "}"
                 ai_primary_route = choose_ai_primary_route(
                     ai_apps_mode, ai_apps_route, primary_route, warp_active, secondary_active)

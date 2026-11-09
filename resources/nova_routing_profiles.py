@@ -44,6 +44,9 @@ AI_APP_DOMAINS = (
     "flow.google.com", "jules.google.com", "notebook.google.com", "notebooklm.google.com",
     "aisandbox-pa.googleapis.com", "robinfrontend-pa.googleapis.com",
     "alkalimakersuite-pa.clients6.google.com",
+    # Chromium bug tracker: crbug.com редиректит на issues.chromium.org.
+    # Ведём тем же маршрутом, что Gemini (Opera EU 1371), а не direct/1370.
+    "crbug.com", "issues.chromium.org",
 )
 
 

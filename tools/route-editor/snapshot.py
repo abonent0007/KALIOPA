@@ -158,7 +158,7 @@ def update_nodes(data, facts):
         elif edge.get("id") == "e-pac-opera":
             edge["condition"] = (
                 "ai_apps/eu/ai_second/youtube → 1371 (EU NL); "
-                "Google AI/opencode → 1370 только если 1371 лёг"
+                "Google AI/opencode/crbug → 1370 только если 1371 лёг"
             )
             edge["label"] = f"→ {facts['ai_route']}" if facts.get("ai_route") else "→ PROXY 127.0.0.1:1371"
         elif edge.get("id") == "e-pac-direct":
@@ -174,7 +174,7 @@ def update_nodes(data, facts):
     data["notes"] = (
         f"Логически верная схема KALIOPA {facts['version']} на {facts['date']}. "
         f"PAC 1369: localhost/LAN/exclude/.ru/user_direct → DIRECT; "
-        f"ai_apps/eu/youtube → Opera EU 1371 (NL {opera_endpoint.split(':')[0]}); Google AI/opencode → 1371, 1370 — только если 1371 лёг. "
+        f"ai_apps/eu/youtube → Opera EU 1371 (NL {opera_endpoint.split(':')[0]}); Google AI/opencode/crbug → 1371, 1370 — только если 1371 лёг. "
         f"выход Opera {facts['opera_exit'] or 'NL'}. "
         f"ru/foreign-default → WARP 1370 (выход {facts['warp_exit'] or '?'}). "
         f"Основной слот: {facts['primary']} — один слушатель Custom AWG UDP {facts.get('warp_endpoint') or '188.114.96.248:2408'}, "

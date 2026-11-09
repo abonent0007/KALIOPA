@@ -15,7 +15,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE_DIR / "resources"))
 
-from nova_routing_profiles import choose_ai_primary_route  # noqa: E402
+from nova_routing_profiles import AI_APP_DOMAINS, choose_ai_primary_route  # noqa: E402
 
 NOVA_PY = (BASE_DIR / "nova.pyw").read_text(encoding="utf-8", errors="ignore")
 AI_LIST = {
@@ -51,7 +51,14 @@ class AIRoutingTests(unittest.TestCase):
         self.assertIn("ai_second_domains |= (_ai_set & _google_ai_hosts)", NOVA_PY)
 
     def test_ai_primary_uses_google_hosts_and_opencode(self):
-        self.assertIn('ai_primary_hosts = set(_google_ai_hosts) | {"opencode.ai"}', NOVA_PY)
+        self.assertIn("ai_primary_hosts = set(_google_ai_hosts) | {", NOVA_PY)
+        self.assertIn('"opencode.ai"', NOVA_PY)
+        self.assertIn('"crbug.com"', NOVA_PY)
+        self.assertIn('"issues.chromium.org"', NOVA_PY)
+
+    def test_crbug_is_in_ai_apps(self):
+        self.assertIn("crbug.com", AI_APP_DOMAINS)
+        self.assertIn("issues.chromium.org", AI_APP_DOMAINS)
 
     def test_ai_primary_rule_precedes_ai_apps(self):
         self.assertLess(
