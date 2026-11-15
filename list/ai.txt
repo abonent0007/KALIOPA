@@ -1,4 +1,5 @@
 # ????????? 2026-10-31 ?? US-?????? geohide.ru/us/domains.txt (?????? ??-???????).
+2ip.io
 a.claude.ai
 ab.chatgpt.com
 accountcapabilities-pa.googleapis.com
@@ -115,6 +116,7 @@ oaiusercontent.com
 opal.google
 opal.google.com
 openai.com
+opencode.ai
 openrouter.ai
 optimizationguide-pa.googleapis.com
 pi.ai

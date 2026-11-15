@@ -9104,6 +9104,9 @@ try:
                 # маршрутом, что Gemini.
                 ai_primary_hosts = set(_google_ai_hosts) | {
                     "opencode.ai", "crbug.com", "issues.chromium.org",
+                    # Проверка страны выхода идёт тем же маршрутом, что Gemini:
+                    # 1371, а если вторичный слот лёг — основной 1370.
+                    "2ip.io",
                 }
                 ai_primary_js = "{" + ",".join(f'"{d}":1' for d in sorted(ai_primary_hosts)) + "}"
                 ai_primary_route = choose_ai_primary_route(

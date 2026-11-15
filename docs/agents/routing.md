@@ -88,8 +88,9 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 8. Явные режимы приложений (`discord`/`telegram`/`whatsapp`/`ai_apps` ≠ auto)
    → их маршрут.
 9. `ai_primary` (Google AI: Gemini, AI Studio, NotebookLM, Flow, Jules и их
-   `*.googleapis.com`; плюс `opencode.ai` и `crbug.com`/`issues.chromium.org` —
-   Chromium bug tracker) → строка `ai_apps` (Opera EU, живой адрес пула —
+   `*.googleapis.com`; плюс `opencode.ai`, `2ip.io` — проверка страны выхода —
+   и `crbug.com`/`issues.chromium.org`, Chromium bug tracker) → строка
+   `ai_apps` (Opera EU, живой адрес пула —
    сейчас `77.111.247.19`, NL). Основной слот — только запасной путь, если
    вторичный слот лёг. Правило стоит **раньше** `ai_apps`. Замер 2026-11-08:
    живой EU-адрес отдаёт Gemini `200` без `/sorry`, ChatGPT `200`,
@@ -113,8 +114,8 @@ PAC 1369  (nova.pyw::generate_pac → FindProxyForURL)
 | RU (main.txt, auto/fallback) | `SOCKS5 127.0.0.1:1370; PROXY 127.0.0.1:1371` |
 | EU / YouTube | `PROXY 127.0.0.1:1371; SOCKS5 127.0.0.1:1370` |
 | AI-приложения (`ai_apps=opera`) | `PROXY 127.0.0.1:1371` |
-| Google AI / `opencode.ai` (secondary поднят) | `PROXY 127.0.0.1:1371` (Opera EU, NL) |
-| Google AI / `opencode.ai` (secondary лёг) | `SOCKS5 127.0.0.1:1370` |
+| Google AI / `opencode.ai` / `2ip.io` (secondary поднят) | `PROXY 127.0.0.1:1371` (Opera EU, NL) |
+| Google AI / `opencode.ai` / `2ip.io` (secondary лёг) | `SOCKS5 127.0.0.1:1370` |
 | `.ru`, `exclude`, локальные TLD | `DIRECT` |
 | Остальной мир (`foreign_default`) | RU-маршрут → VPN |
 | Резервы Tor/VLESS | в PAC не попадают, пока вторичный слот не переключён на них явно |

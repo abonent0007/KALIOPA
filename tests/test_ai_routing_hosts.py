@@ -35,6 +35,14 @@ def google_ai_hosts():
     return set(re.findall(r'"([^"]+)"', NOVA_PY[start:end]))
 
 
+def ai_primary_hosts():
+    start = NOVA_PY.find("ai_primary_hosts = set(_google_ai_hosts) | {")
+    if start < 0:
+        return set()
+    end = NOVA_PY.find("}", start)
+    return set(re.findall(r'"([^"]+)"', NOVA_PY[start:end]))
+
+
 class AIRoutingTests(unittest.TestCase):
     def test_google_ai_hosts_block_exists(self):
         self.assertTrue(google_ai_hosts(), "_google_ai_hosts пропал из generate_pac")
@@ -59,6 +67,19 @@ class AIRoutingTests(unittest.TestCase):
     def test_crbug_is_in_ai_apps(self):
         self.assertIn("crbug.com", AI_APP_DOMAINS)
         self.assertIn("issues.chromium.org", AI_APP_DOMAINS)
+
+    def test_opencode_is_in_ai_list(self):
+        # opencode.ai идёт тем же маршрутом, что ChatGPT и Gemini (Opera 1371),
+        # и должен быть в списке ИИ-доменов, а не только в коде PAC.
+        self.assertIn("opencode.ai", AI_LIST)
+        self.assertIn("opencode.ai", AI_APP_DOMAINS)
+
+    def test_2ip_is_in_ai_list_and_primary(self):
+        # 2ip.io показывает страну выхода и должен идти маршрутом GPT/Gemini:
+        # 1371, а если вторичный слот лёг — основным 1370 (ai_primary).
+        self.assertIn("2ip.io", AI_LIST)
+        self.assertIn("2ip.io", AI_APP_DOMAINS)
+        self.assertIn("2ip.io", ai_primary_hosts())
 
     def test_ai_primary_rule_precedes_ai_apps(self):
         self.assertLess(

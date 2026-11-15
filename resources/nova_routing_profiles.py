@@ -35,6 +35,10 @@ AI_APP_DOMAINS = (
     "chatgpt.com", "openai.com", "oaistatic.com", "oaiusercontent.com",
     # OpenCode
     "opencode.ai",
+    # Проверка страны выхода: 2ip.io отдаёт IP, который видит сайт. Держим его
+    # на той же строке, что ChatGPT и Gemini (Opera 1371), чтобы проверять
+    # именно тот выход, через который идут ИИ-приложения.
+    "2ip.io",
     # Jan: its own mirror apps.jan.ai, models from Hugging Face (huggingface.co, *.hf.co CDN)
     "jan.ai", "huggingface.co", "hf.co",
     # Google AI: тот же набор, что точечно добавлен в ai_second. Правило ai_primary
