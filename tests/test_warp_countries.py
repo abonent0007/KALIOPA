@@ -33,6 +33,14 @@ class NormalizeTests(unittest.TestCase):
         row = countries.normalize_entry({"id": "LTE DE!", "title": "[LTE] Германия"})
         self.assertEqual("lte-de", row["id"])
 
+    def test_cyrillic_title_gets_a_usable_slug(self):
+        rid = countries.make_id("Финляндия")
+        self.assertEqual("finlyandiya", rid)
+        row = countries.normalize_entry({"id": rid, "title": "Финляндия",
+                                         "host": "fi.example", "port": 500})
+        self.assertIsNotNone(row)
+        self.assertTrue(countries.make_id("").startswith("country-"))
+
 
 class ResolveTests(unittest.TestCase):
     def setUp(self):

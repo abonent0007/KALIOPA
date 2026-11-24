@@ -19,6 +19,7 @@ __all__ = [
     "DEFAULT_CATALOG",
     "normalize_entry",
     "normalize",
+    "make_id",
     "load",
     "save",
     "by_id",
@@ -44,6 +45,25 @@ DEFAULT_CATALOG = (
 _HOST_RE = re.compile(r"^[A-Za-z0-9._:-]{1,255}$")
 _ISO_RE = re.compile(r"^[A-Za-z]{2}$")
 _ID_RE = re.compile(r"[^a-z0-9_-]+")
+
+# Транслитерация для id: кириллическое название страны иначе теряется целиком
+# (regex оставляет только a-z0-9), а запись без id отбраковывается.
+_CYRILLIC = str.maketrans({
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+    "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "h", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+})
+
+
+def make_id(title, fallback="country") -> str:
+    """Слаг для записи каталога: из названия, при пустом результате — «country-N»."""
+    import time
+
+    text = str(title or "").lower().translate(_CYRILLIC)
+    slug = _ID_RE.sub("-", text).strip("-")
+    return slug[:24] or f"{fallback}-{int(time.time())}"
 
 
 def _as_int(value, default, low, high):

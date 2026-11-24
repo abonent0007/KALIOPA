@@ -151,6 +151,46 @@ TAB_ACTION_ROWS = {
     TAB_DNS: (("dns_test_all", "dns_apply", "dns_reset"),),
 }
 
+# действие → метод окна. Держится отдельно от словаря внутри `_dispatch_action`,
+# чтобы (а) тест мог проверить, что у каждого действия есть метод, и (б) опечатка
+# в одном действии не роняла весь диспетчер (замер 2026-11-24: отсутствующий
+# `_on_dns_test_selected` ломал все кнопки действия, включая «Настройки…»).
+_ACTION_METHODS = {
+    "connect": "_on_connect",
+    "connect_group": "_on_connect_group",
+    "test": "_on_test",
+    "test_list": "_on_test_list",
+    "refresh_profiles": "_on_refresh_profiles",
+    "folder": "_on_folder",
+    "generate_custom": "_on_generate_custom",
+    "generate_custom_settings": "_on_generate_custom_settings",
+    "delete": "_on_delete",
+    "rename": "_on_rename",
+    "sub_add": "_on_sub_add",
+    "sub_interval": "_on_sub_interval",
+    "sub_toggle": "_on_sub_toggle",
+    "sub_refresh": "_on_sub_refresh",
+    "sub_delete": "_on_sub_delete",
+    "import_file": "_on_import_file",
+    "import_clipboard": "_on_import_clipboard",
+    "tor_toggle": "_on_tor_toggle",
+    "tor_new_identity": "_on_tor_new_identity",
+    "tor_refresh_bridges": "_on_tor_refresh_bridges",
+    "dns_test": "_on_dns_test_all",
+    "dns_test_all": "_on_dns_test_all",
+    "dns_apply": "_on_dns_apply",
+    "dns_reset": "_on_dns_reset",
+}
+# Выпуск и перевыпуск идут через `_on_job`: (kind, force).
+_ACTION_JOBS = {
+    "generate_warp": ("warp", False),
+    "issue_proton": ("proton", False),
+    "register_masque": ("masque", False),
+    "reissue_warp": ("warp", True),
+    "reissue_proton": ("proton", True),
+    "reissue_masque": ("masque", True),
+}
+
 
 TOR_ENTRIES = (
     ("auto", "Auto"),
@@ -2502,39 +2542,11 @@ class ProfilesWindow:
     # -- actions -------------------------------------------------------------------------
 
     def _dispatch_action(self, action):
-        handlers = {
-            "connect": self._on_connect,
-            "connect_group": self._on_connect_group,
-            "test": self._on_test,
-            "test_list": self._on_test_list,
-            "refresh_profiles": self._on_refresh_profiles,
-            "folder": self._on_folder,
-            "generate_warp": lambda: self._on_job("warp"),
-            "generate_custom": self._on_generate_custom,
-            "generate_custom_settings": self._on_generate_custom_settings,
-            "issue_proton": lambda: self._on_job("proton"),
-            "register_masque": lambda: self._on_job("masque"),
-            "reissue_warp": lambda: self._on_job("warp", force=True),
-            "reissue_proton": lambda: self._on_job("proton", force=True),
-            "reissue_masque": lambda: self._on_job("masque", force=True),
-            "delete": self._on_delete,
-            "rename": self._on_rename,
-            "sub_add": self._on_sub_add,
-            "sub_interval": self._on_sub_interval,
-            "sub_toggle": self._on_sub_toggle,
-            "sub_refresh": self._on_sub_refresh,
-            "sub_delete": self._on_sub_delete,
-            "import_file": self._on_import_file,
-            "import_clipboard": self._on_import_clipboard,
-            "tor_toggle": self._on_tor_toggle,
-            "tor_new_identity": self._on_tor_new_identity,
-            "tor_refresh_bridges": self._on_tor_refresh_bridges,
-            "dns_test": self._on_dns_test_selected,
-            "dns_test_all": self._on_dns_test_all,
-            "dns_apply": self._on_dns_apply,
-            "dns_reset": self._on_dns_reset,
-        }
-        handler = handlers.get(action)
+        if action in _ACTION_JOBS:
+            kind, force = _ACTION_JOBS[action]
+            handler = lambda: self._on_job(kind, force=force)
+        else:
+            handler = getattr(self, _ACTION_METHODS.get(action, ""), None)
         if handler is None or not self.alive():
             return
         try:
@@ -4241,8 +4253,9 @@ class WarpCountriesEditor:
             self.set_status("Введите название страны", "warn")
             return
         row = countries.normalize_entry({
-            "id": draft["title"], "title": draft["title"], "host": draft["host"],
-            "port": draft["port"], "iso": draft["iso"], "note": draft["note"],
+            "id": countries.make_id(draft["title"]), "title": draft["title"],
+            "host": draft["host"], "port": draft["port"], "iso": draft["iso"],
+            "note": draft["note"],
         })
         if row is None:
             self.set_status("Хост выглядит неверно — только имя или IP", "warn")

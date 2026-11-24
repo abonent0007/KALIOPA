@@ -15726,6 +15726,10 @@ function FindProxyForURLEx(url, host) {{
                 continue
             row = catalog.by_id(resolvers, resolver_id)
             addresses = catalog.addresses_of(row) if row else []
+            # У dns-ai.ru нет UDP/53 — только DoH, поэтому правило ведёт на
+            # локальный резолвер 127.0.0.1 (его поднимет setup ниже).
+            if row and str(row.get("id") or "") == "dnsai":
+                addresses = ["127.0.0.1"]
             if addresses:
                 out[name] = tuple(addresses)
         if out and log_func:
@@ -15782,7 +15786,11 @@ function FindProxyForURLEx(url, host) {{
                 # закрыл UDP-каскад, добираем своим резолвером: он слушает 127.0.0.1:53
                 # и ходит в DoH через живой слот Nova, поэтому правило указывает на
                 # 127.0.0.1, а не на адреса провайдеров.
-                if len(desired) < len(NOVA_NRPT_NAMESPACES):
+                need_local_doh = any(
+                    str(server) == "127.0.0.1"
+                    for servers in overrides.values() for server in servers
+                )
+                if len(desired) < len(NOVA_NRPT_NAMESPACES) or need_local_doh:
                     doh_support = _nrpt_doh_support(log_func)
                     if get_routing_app_mode("ai_apps") in VPN_ROUTE_MODES:
                         doh_support = drop_family_names(doh_support, AI_APP_DOMAINS)
@@ -33707,15 +33715,29 @@ function FindProxyForURLEx(url, host) {{
                     import nova_dns_catalog as catalog
                     rows = {str(row.get("id") or ""): row for row in catalog.resolvers()}
                     out = {}
-                    for item in targets or ():
+                    lock = threading.Lock()
+
+                    def one(item):
                         text = str(item or "").strip()
                         if text.startswith("custom:"):
                             value = text.split(":", 1)[1].strip()
                             row = {"id": "custom:" + value, "title": value, "host": value,
                                    "ips": [], "community": False, "note": ""}
-                            out["custom:" + value] = catalog.check(row, timeout=3.0)
+                            result = catalog.check(row, timeout=3.0)
                         elif text in rows:
-                            out[text] = catalog.check(rows[text], timeout=2.5)
+                            result = catalog.check(rows[text], timeout=2.5)
+                        else:
+                            return
+                        with lock:
+                            out[text] = result
+
+                    threads = [threading.Thread(target=one, args=(item,), daemon=True,
+                                                name="NovaDnsOne")
+                               for item in (targets or ())]
+                    for thread in threads:
+                        thread.start()
+                    for thread in threads:
+                        thread.join(timeout=15.0)
                     if callable(done_cb):
                         done_cb(out)
 
