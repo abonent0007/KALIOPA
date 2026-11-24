@@ -6363,7 +6363,11 @@ try:
                     except Exception as exc:
                         self.log_func(f"[WARP-ген] Custom: автоподключение не удалось ({type(exc).__name__}).")
                 endpoint = str(result.get("endpoint") or "")
-                return True, f"создан {name}" + (f" через {endpoint}" if endpoint else "")
+                observed = str(result.get("observed_country") or "")
+                suffix = f" через {endpoint}" if endpoint else ""
+                if observed:
+                    suffix += f" · выход {observed}"
+                return True, f"создан {name}{suffix}"
 
             return self._run("warp", _work, wait, "NovaCustomWarpGenerate")
 
@@ -15683,6 +15687,51 @@ function FindProxyForURLEx(url, host) {{
                      f"через 127.0.0.1.")
         return support
 
+    def _dns_namespace_route(name):
+        """Маршрут PAC для имени из NRPT-набора (см. nova_dns_catalog.ROUTE_ORDER)."""
+        text = str(name or "").lower()
+        if "youtube" in text:
+            return "youtube"
+        if "telegram" in text or text.endswith("t.me") or ".t.me" in text:
+            return "telegram"
+        if "whatsapp" in text:
+            return "whatsapp"
+        if "discord" in text:
+            return "discord"
+        # Остальной набор NRPT — имена ИИ-сервисов, поэтому по умолчанию ai_apps.
+        return "ai_apps"
+
+    def _dns_route_overrides(log_func=None):
+        """имя → адреса резолвера, выбранного для маршрута этого имени.
+
+        Выбор владельца из `temp/dns-routes.json` (вкладка «Профили → DNS») лежит
+        поверх каскада: назначенный маршрут получает свой резолвер, остальные —
+        обычный dns-ai → comss → geohide. Незаданные маршруты не меняют ничего.
+        """
+        try:
+            import nova_dns_catalog as catalog
+        except Exception:
+            return {}
+        try:
+            data = catalog.load_routes(get_base_dir())
+        except Exception:
+            return {}
+        routes = data.get("routes") or {}
+        resolvers = catalog.resolvers()
+        out = {}
+        for name in NOVA_NRPT_NAMESPACES:
+            route = _dns_namespace_route(name)
+            resolver_id = str(routes.get(route) or "").strip().lower()
+            if not resolver_id:
+                continue
+            row = catalog.by_id(resolvers, resolver_id)
+            addresses = catalog.addresses_of(row) if row else []
+            if addresses:
+                out[name] = tuple(addresses)
+        if out and log_func:
+            log_func(f"[NRPT] назначено резолверов по маршрутам: {len(out)} имён.")
+        return out
+
     def setup_nrpt_dns_unblock(log_func=None):
         """Setup NRPT rules for AI DNS unblocking. Idempotent: skips if already applied.
 
@@ -15725,6 +15774,10 @@ function FindProxyForURLEx(url, host) {{
                     if len(kept) != len(desired) and log_func:
                         log_func(f"[NRPT] ИИ-приложения идут через VPN: {len(desired) - len(kept)} имён без DNS-разблокировщика.")
                     desired = kept
+                # Выбор владельца по маршруту (Профили → DNS) — поверх каскада.
+                overrides = _dns_route_overrides(log_func)
+                if overrides:
+                    desired.update(overrides)
                 # UDP/53 у dns-ai.ru нет — сервис живёт только по DoH. То, чего не
                 # закрыл UDP-каскад, добираем своим резолвером: он слушает 127.0.0.1:53
                 # и ходит в DoH через живой слот Nova, поэтому правило указывает на
@@ -33628,6 +33681,46 @@ function FindProxyForURLEx(url, host) {{
 
             def save_warp_custom_settings(self, settings):
                 return nova_warp_custom_settings.save(get_base_dir(), settings)
+
+            # -- DNS: каталог, назначение по маршрутам, проверка резолверов ----------
+
+            def save_dns_routes(self, data):
+                import nova_dns_catalog as catalog
+                saved = catalog.save_routes(get_base_dir(), data or {})
+                return {"default": saved.get("default", ""),
+                        "routes": saved.get("routes", {})}
+
+            def apply_dns_routes(self):
+                def _worker():
+                    logger = globals().get("log_print", print)
+                    try:
+                        setup_nrpt_dns_unblock(log_func=logger)
+                    except Exception as exc:
+                        logger(f"[DNS] не удалось применить NRPT: {exc}")
+
+                _start_profiles_thread(_worker, "NovaDnsApply")
+
+            def test_dns(self, targets, done_cb=None):
+                """Проверить резолверы реальным A-запросом; ответ приходит в done_cb."""
+
+                def _worker():
+                    import nova_dns_catalog as catalog
+                    rows = {str(row.get("id") or ""): row for row in catalog.resolvers()}
+                    out = {}
+                    for item in targets or ():
+                        text = str(item or "").strip()
+                        if text.startswith("custom:"):
+                            value = text.split(":", 1)[1].strip()
+                            row = {"id": "custom:" + value, "title": value, "host": value,
+                                   "ips": [], "community": False, "note": ""}
+                            out["custom:" + value] = catalog.check(row, timeout=3.0)
+                        elif text in rows:
+                            out[text] = catalog.check(rows[text], timeout=2.5)
+                    if callable(done_cb):
+                        done_cb(out)
+
+                threading.Thread(target=_worker, daemon=True, name="NovaDnsTest").start()
+
 
             def issue_proton(self, force=False):
                 get_profile_jobs().issue_proton(force=bool(force), interactive=True)

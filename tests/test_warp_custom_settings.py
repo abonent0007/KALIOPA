@@ -51,6 +51,11 @@ class NormalizeTests(unittest.TestCase):
         data = settings.normalize({"jc": 4, "jmin": 80, "jmax": 40})
         self.assertEqual(0, data["jc"])
 
+    def test_country_defaults_to_any_and_is_clamped(self):
+        self.assertEqual("any", settings.DEFAULTS["country"])
+        self.assertEqual("fi", settings.normalize({"country": "FI"})["country"])
+        self.assertEqual("any", settings.normalize({"country": "не страна!"})["country"])
+
 
 class PresetTests(unittest.TestCase):
     def test_fast_preset_pins_a_proven_sni_and_more_endpoints(self):
@@ -68,6 +73,11 @@ class PresetTests(unittest.TestCase):
         data = settings.apply_preset("custom", current)
         self.assertEqual(1300, data["mtu"])
         self.assertEqual("custom", data["preset"])
+
+    def test_a_preset_does_not_reset_the_country(self):
+        current = settings.normalize({"country": "fi"})
+        data = settings.apply_preset("optimal", current)
+        self.assertEqual("fi", data["country"])
 
 
 class ResolveTests(unittest.TestCase):
@@ -91,6 +101,12 @@ class ResolveTests(unittest.TestCase):
 
     def test_random_junk_is_none(self):
         self.assertIsNone(settings.resolve({})["junk"])
+
+    def test_country_travels_to_the_generator(self):
+        options = settings.resolve({"country": "fi", "endpoint_mode": "manual",
+                                    "endpoint_host": "fi.example", "endpoint_port": 500})
+        self.assertEqual("fi", options["country"])
+        self.assertEqual("any", settings.resolve({})["country"])
 
 
 class StorageTests(unittest.TestCase):

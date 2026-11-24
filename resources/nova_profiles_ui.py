@@ -44,8 +44,9 @@ import nova_tooltips
 
 __all__ = [
     "open_profiles_window", "toggle_profiles_window", "close_profiles_window", "get_profiles_window",
-    "ProfilesWindow", "ImportPreview", "CustomWarpSettings", "FallbackPillButton", "ThemedScrollbar",
-    "TABS", "TAB_TOR", "TAB_SUBS", "ACTION_LABELS", "TAB_ACTION_ROWS", "TOR_ENTRIES",
+    "ProfilesWindow", "ImportPreview", "CustomWarpSettings", "WarpCountriesEditor",
+    "FallbackPillButton", "ThemedScrollbar",
+    "TABS", "TAB_TOR", "TAB_SUBS", "TAB_DNS", "ACTION_LABELS", "TAB_ACTION_ROWS", "TOR_ENTRIES",
     "IMPORT_FILETYPES", "DEFAULT_THEME", "merge_theme", "is_dark_theme", "set_pill_text",
     "format_outcome", "format_row_text", "format_selection_text", "format_runtime_text",
     "format_job_line", "format_tor_status", "format_list_header", "classify_import_candidates",
@@ -72,6 +73,9 @@ TAB_TOR = "tor"
 # no profile list of its own -- what it brings lands in VLESS and «Custom AWG» -- so it reuses the
 # list panel with rows of its own.
 TAB_SUBS = "subscriptions"
+# Раздел DNS: каталог резолверов с проверкой и назначение резолвера доменным
+# группам PAC (ru/eu/ai_apps/…). Своего списка профилей нет — своя панель.
+TAB_DNS = "dns"
 def group_caption(group):
     """What the window calls a group; the folder/id stay the historical constant."""
     return "Xray" if group == GROUP_VLESS else group
@@ -87,6 +91,7 @@ TABS = (
     (GROUP_CUSTOM, "Custom AWG"),
     (TAB_SUBS, "Подписки"),
     (TAB_TOR, "Tor"),
+    (TAB_DNS, "DNS"),
 )
 
 ACTION_LABELS = {
@@ -116,6 +121,10 @@ ACTION_LABELS = {
     "tor_toggle": "Подключить Tor",
     "tor_new_identity": "Новая цепочка",
     "tor_refresh_bridges": "Обновить мосты",
+    "dns_test": "Проверить",
+    "dns_test_all": "Проверить все",
+    "dns_apply": "Применить",
+    "dns_reset": "Сбросить",
 }
 TOR_CONNECT_LABEL = "Подключить Tor"
 TOR_DISCONNECT_LABEL = "Отключить Tor"
@@ -139,6 +148,7 @@ TAB_ACTION_ROWS = {
     GROUP_CUSTOM: (_MAIN_ROW, ("generate_custom", "generate_custom_settings", "import_file", "import_clipboard", "rename", "delete")),
     TAB_SUBS: (("sub_add", "sub_interval", "sub_toggle", "sub_refresh", "sub_delete"),),
     TAB_TOR: (("tor_toggle", "tor_new_identity", "tor_refresh_bridges"),),
+    TAB_DNS: (("dns_test_all", "dns_apply", "dns_reset"),),
 }
 
 
@@ -1333,8 +1343,11 @@ class ProfilesWindow:
         self.list_panel.grid(row=0, column=0, sticky="nsew")
         self.tor_panel = tk.Frame(body, bg=t["bg"])
         self.tor_panel.grid(row=0, column=0, sticky="nsew")
+        self.dns_panel = tk.Frame(body, bg=t["bg"])
+        self.dns_panel.grid(row=0, column=0, sticky="nsew")
         self._build_list_panel(self.list_panel)
         self._build_tor_panel(self.tor_panel)
+        self._build_dns_panel(self.dns_panel)
 
         self._divider(outer, (8, 8))
 
@@ -1431,6 +1444,283 @@ class ProfilesWindow:
         self.tor_hint.pack(fill="x", pady=(8, 0))
         panel.update_idletasks()
         self._tor_caption_width = caption.winfo_reqwidth()
+
+    # -- вкладка DNS --------------------------------------------------------------
+
+    def _dns_catalog(self):
+        try:
+            import nova_dns_catalog as catalog
+            return list(catalog.resolvers())
+        except Exception:
+            return []
+
+    def _dns_routes_data(self):
+        """Сохранённое назначение DNS; читается с диска, как и каталог."""
+        try:
+            import nova_dns_catalog as catalog
+            base = str(getattr(self.ctx, "base_dir", "") or "")
+            data = catalog.load_routes(base)
+            return {"default": data.get("default", ""), "routes": data.get("routes", {})}
+        except Exception:
+            return {"default": "", "routes": {}}
+
+    def _build_dns_panel(self, panel):
+        t = self.theme
+        self.dns_header = self._label(panel)
+        self.dns_header.pack(fill="x", pady=(0, 4))
+        self.dns_rows = tk.Frame(panel, bg=t["bg"])
+        self.dns_rows.pack(fill="x")
+
+        custom = tk.Frame(panel, bg=t["bg"])
+        custom.pack(fill="x", pady=(8, 0))
+        tk.Label(custom, text="Свой резолвер", font=self.font_text, bg=t["bg"], fg=t["text"],
+                 anchor="w").pack(anchor="w")
+        row = tk.Frame(custom, bg=t["bg"])
+        row.pack(fill="x", pady=(2, 0))
+        self.dns_custom_entry = tk.Entry(row, width=30, font=self.font_text, bd=0, relief="flat",
+                                         bg=t["panel"], fg=t["text"], insertbackground=t["text"],
+                                         highlightthickness=1, highlightbackground=t["border"],
+                                         highlightcolor=t.get("pill_on_fg", t["text"]))
+        self.dns_custom_entry.pack(side="left")
+        self.dns_custom_pill = self._make_pill(row, "Проверить", self._on_dns_test_custom,
+                                               width=84)
+        self.dns_custom_pill.pack(side="left", padx=(6, 0))
+        self.dns_custom_status = self._label(custom, tone="muted")
+        self.dns_custom_status.pack(fill="x")
+
+        routes = tk.Frame(panel, bg=t["bg"])
+        routes.pack(fill="x", pady=(10, 0))
+        tk.Label(routes, text="DNS по маршрутам", font=self.font_title,
+                 bg=t["bg"], fg=t["text"], anchor="w").pack(anchor="w")
+        self.dns_routes_box = tk.Frame(routes, bg=t["bg"])
+        self.dns_routes_box.pack(fill="x", pady=(2, 0))
+        self.dns_hint = self._label(panel, tone="muted")
+        self.dns_hint.pack(fill="x", pady=(8, 0))
+        self.dns_status = self._label(panel, tone="muted")
+        self.dns_status.pack(fill="x", pady=(4, 0))
+
+        self._dns_rows_signature = None
+        self._dns_route_vars = {}
+        self._dns_title_to_id = {}
+        self._dns_checks = {}
+        self._dns_testing = set()
+        # Отрисовка — при входе на вкладку: `_content_px` ещё не известен, а
+        # `_set_label` обгоняет текст по ширине окна.
+
+    def _build_dns_rows(self, rows):
+        t = self.theme
+        for child in self.dns_rows.winfo_children():
+            child.destroy()
+        self._dns_row_widgets = {}
+        titles = [str(row.get("title") or row.get("id") or "") for row in rows]
+        self._dns_title_to_id = {"": ""}
+        for row in rows:
+            self._dns_title_to_id[str(row.get("title") or "")] = str(row.get("id") or "")
+        for row in rows:
+            rid = str(row.get("id") or "")
+            line = tk.Frame(self.dns_rows, bg=t["bg"])
+            line.pack(fill="x", pady=1)
+            text = tk.Label(line, text=f"{row.get('title','')} · {row.get('host','')}"
+                            + (" · антиблок" if row.get("community") else ""),
+                            font=self.font_text, bg=t["bg"], fg=t["text"], anchor="w")
+            text.pack(side="left")
+            status = self._label(line, tone="muted")
+            status.pack(side="left", padx=(8, 0))
+            pill = self._make_pill(line, "Проверить", lambda r=rid: self._on_dns_test(r), width=78)
+            pill.pack(side="right")
+            self._dns_row_widgets[rid] = (status, pill)
+
+    def _render_dns_routes(self, rows, data):
+        t = self.theme
+        for child in self.dns_routes_box.winfo_children():
+            child.destroy()
+        self._dns_route_vars = {}
+        routes = data.get("routes") or {}
+        for route, title in getattr(__import__("nova_dns_catalog"), "ROUTE_ORDER", ()):
+            line = tk.Frame(self.dns_routes_box, bg=t["bg"])
+            line.pack(fill="x", pady=1)
+            tk.Label(line, text=title, font=self.font_text, bg=t["bg"], fg=t["text"],
+                     width=24, anchor="w").pack(side="left")
+            current = str(routes.get(route) or "")
+            label = ""
+            for row in rows:
+                if str(row.get("id") or "") == current:
+                    label = str(row.get("title") or "")
+                    break
+            var = tk.StringVar(value=label)
+            menu = tk.OptionMenu(line, var, "", *[
+                str(row.get("title") or "") for row in rows])
+            menu.configure(font=self.font_text, bg=t["panel"], fg=t["text"],
+                           activebackground=t["pill_on_bg"], activeforeground=t["pill_on_fg"],
+                           highlightthickness=1, highlightbackground=t["border"],
+                           highlightcolor=t["border"], relief="flat", bd=0, anchor="w", width=26)
+            menu["menu"].configure(bg=t["panel"], fg=t["text"],
+                                   activebackground=t["pill_on_bg"],
+                                   activeforeground=t["pill_on_fg"], font=self.font_text)
+            menu.pack(side="left", padx=(6, 0))
+            self._dns_route_vars[route] = var
+        self._dns_saved_routes = dict(routes)
+
+    def _render_dns_panel(self):
+        if not self.alive():
+            return
+        rows = self._dns_catalog()
+        signature = tuple(str(row.get("id") or "") for row in rows)
+        if signature != self._dns_rows_signature:
+            self._build_dns_rows(rows)
+            self._dns_rows_signature = signature
+            self._render_dns_routes(rows, {"routes": self._dns_routes_data().get("routes") or {}})
+        self._set_label(self.dns_header,
+                        f"Резолверов: {len(rows)} · проверка — реальный DNS-запрос", "muted")
+        self._set_label(self.dns_hint,
+                        "Антиблок-резолверы отдают адреса «для обхода»: их ставят на группы, "
+                        "которые идут через туннель.", "muted")
+        for rid, (status, pill) in getattr(self, "_dns_row_widgets", {}).items():
+            self._paint_dns_row(rid, status, pill)
+        self._set_label(self.dns_status,
+                        f"Изменений не сохранено" if self._dns_dirty() else "Назначения применены",
+                        "warn" if self._dns_dirty() else "muted")
+
+    def _paint_dns_row(self, rid, status, pill):
+        result = self._dns_checks.get(rid)
+        if rid in self._dns_testing:
+            self._set_label(status, "проверка…", "muted")
+        elif result is None:
+            self._set_label(status, "не проверен", "muted")
+        elif result.get("ok"):
+            self._set_label(status, f"✓ {result.get('latency_ms')} мс · {result.get('ips',[''])[0]}",
+                            "ok")
+        else:
+            self._set_label(status, f"✗ {result.get('error') or 'нет ответа'}", "fail")
+
+    def _dns_dirty(self):
+        saved_routes = getattr(self, "_dns_saved_routes", {}) or {}
+        for route, var in self._dns_route_vars.items():
+            title = str(var.get() or "")
+            wanted = self._dns_title_to_id.get(title, "")
+            if str(saved_routes.get(route) or "") != wanted:
+                return True
+        return False
+
+    def _on_dns_test(self, resolver_id):
+        fn = getattr(self.ctx, "test_dns", None)
+        if not callable(fn):
+            self._notice("Проверка DNS недоступна в этой сборке Nova", "warn")
+            return
+        rid = str(resolver_id)
+        if rid in self._dns_testing:
+            return
+        view = self
+        results = self._results
+        self._dns_testing.add(rid)
+        self._inflight += 1
+
+        def done_cb(value=None):
+            results.put((lambda v, _e: view._on_dns_checks_done(v), value, None))
+
+        try:
+            fn((rid,), done_cb)
+        except Exception as exc:
+            self._dns_testing.discard(rid)
+            self._inflight = max(0, self._inflight - 1)
+            self._report_error("Проверка DNS не запустилась", exc)
+            return
+        self._ensure_drain()
+        self._render_dns_panel()
+
+    def _on_dns_test_all(self):
+        rows = self._dns_catalog()
+        if not rows:
+            return
+        fn = getattr(self.ctx, "test_dns", None)
+        if not callable(fn):
+            self._notice("Проверка DNS недоступна в этой сборке Nova", "warn")
+            return
+        ids = [str(row.get("id") or "") for row in rows]
+        view = self
+        results = self._results
+        self._dns_testing.update(ids)
+        self._inflight += 1
+
+        def done_cb(value=None):
+            results.put((lambda v, _e: view._on_dns_checks_done(v), value, None))
+
+        try:
+            fn(tuple(ids), done_cb)
+        except Exception as exc:
+            self._dns_testing.difference_update(ids)
+            self._inflight = max(0, self._inflight - 1)
+            self._report_error("Проверка DNS не запустилась", exc)
+            return
+        self._ensure_drain()
+        self._render_dns_panel()
+
+    def _on_dns_test_custom(self):
+        value = str(self.dns_custom_entry.get() or "").strip()
+        if not value:
+            self._set_label(self.dns_custom_status, "Введите IP или домен", "warn")
+            return
+        fn = getattr(self.ctx, "test_dns", None)
+        if not callable(fn):
+            self._notice("Проверка DNS недоступна в этой сборке Nova", "warn")
+            return
+        view = self
+        results = self._results
+
+        def done_cb(payload=None):
+            results.put((lambda v, _e: view._on_dns_custom_done(v), payload, None))
+
+        try:
+            fn(("custom:" + value,), done_cb)
+        except Exception as exc:
+            self._report_error("Проверка DNS не запустилась", exc)
+            return
+        self._set_label(self.dns_custom_status, "проверка…", "muted")
+        self._ensure_drain()
+
+    def _on_dns_checks_done(self, payload):
+        self._inflight = max(0, self._inflight - 1)
+        results = payload if isinstance(payload, dict) else {}
+        for rid, value in results.items():
+            key = str(rid).removeprefix("custom:")
+            self._dns_checks[key] = value if isinstance(value, dict) else {"ok": False,
+                                                                            "error": "нет ответа"}
+            self._dns_testing.discard(key)
+        if self.current_tab == TAB_DNS:
+            self._render_dns_panel()
+
+    def _on_dns_custom_done(self, payload):
+        result = payload if isinstance(payload, dict) else {}
+        for value in result.values():
+            if isinstance(value, dict):
+                ok = bool(value.get("ok"))
+                text = (f"✓ {value.get('latency_ms')} мс" if ok
+                        else f"✗ {value.get('error') or 'нет ответа'}")
+                self._set_label(self.dns_custom_status, text, "ok" if ok else "fail")
+                return
+        self._set_label(self.dns_custom_status, "✗ нет ответа", "fail")
+
+    def _collect_dns_routes(self):
+        routes = {}
+        for route, var in self._dns_route_vars.items():
+            title = str(var.get() or "")
+            routes[route] = self._dns_title_to_id.get(title, "")
+        return routes
+
+    def _on_dns_apply(self):
+        data = {"version": 1, "default": "cf", "routes": self._collect_dns_routes()}
+        if not self._call_ctx("save_dns_routes", data, error_prefix="DNS-назначения не сохранены"):
+            return
+        if not self._call_ctx("apply_dns_routes", error_prefix="NRPT не обновлён"):
+            return
+        self._dns_saved_routes = dict(data.get("routes") or {})
+        self._notice("DNS-назначения сохранены и применены", "ok")
+        self._render_dns_panel()
+
+    def _on_dns_reset(self):
+        routes = self._dns_routes_data().get("routes")
+        self._render_dns_routes(self._dns_catalog(), {"routes": routes or {}})
+        self._set_label(self.dns_status, "Показано сохранённое", "muted")
 
     def _apply_content_width(self, content_px):
         self._content_px = content_px
@@ -1938,6 +2228,8 @@ class ProfilesWindow:
         self._set_label(self.runtime_label, text, "ok" if tone == "ok" else "normal")
         if self.current_tab == TAB_TOR:
             self._render_tor()
+        elif self.current_tab == TAB_DNS:
+            self._render_dns_panel()
         elif self.current_tab == TAB_SUBS:
             self._render_subs()
             self._render_job_line()
@@ -2149,6 +2441,9 @@ class ProfilesWindow:
             pill.set_selected(key == tab)
         if tab == TAB_TOR:
             self.tor_panel.tkraise()
+        elif tab == TAB_DNS:
+            self.dns_panel.tkraise()
+            self._render_dns_panel()
         else:
             # The subscriptions tab borrows the list panel: its rows are subscriptions, not
             # profiles, and `_row_ids` then holds subscription ids — every reader of it goes
@@ -2234,6 +2529,10 @@ class ProfilesWindow:
             "tor_toggle": self._on_tor_toggle,
             "tor_new_identity": self._on_tor_new_identity,
             "tor_refresh_bridges": self._on_tor_refresh_bridges,
+            "dns_test": self._on_dns_test_selected,
+            "dns_test_all": self._on_dns_test_all,
+            "dns_apply": self._on_dns_apply,
+            "dns_reset": self._on_dns_reset,
         }
         handler = handlers.get(action)
         if handler is None or not self.alive():
@@ -3414,6 +3713,38 @@ class CustomWarpSettings:
                              anchor="w", justify="left", wraplength=470)
         self.hint.pack(fill="x", pady=(2, 8))
 
+        # Страна выхода: ярлык выбора + подстановка точки входа из каталога.
+        country = tk.Frame(outer, bg=t["bg"])
+        country.pack(fill="x")
+        tk.Label(country, text="Страна выхода", font=self.view.font_title, bg=t["bg"],
+                 fg=t["text"], anchor="w").pack(anchor="w")
+        country_row = tk.Frame(country, bg=t["bg"])
+        country_row.pack(fill="x", pady=(2, 6))
+        self._country_rows = self._catalog()
+        self._country_ids = {str(row.get("title") or ""): str(row.get("id") or "any")
+                             for row in self._country_rows}
+        self._suppress_country = False
+        self.country_var = tk.StringVar(
+            value=self._title_for(str(self.values.get("country") or "any")))
+        self.country_menu = tk.OptionMenu(country_row, self.country_var, *self._country_titles())
+        self.country_menu.configure(font=self.view.font_text, bg=t["panel"], fg=t["text"],
+                                    activebackground=t["pill_on_bg"],
+                                    activeforeground=t["pill_on_fg"], highlightthickness=1,
+                                    highlightbackground=t["border"], highlightcolor=t["border"],
+                                    relief="flat", bd=0, anchor="w", width=30)
+        self.country_menu["menu"].configure(bg=t["panel"], fg=t["text"],
+                                            activebackground=t["pill_on_bg"],
+                                            activeforeground=t["pill_on_fg"],
+                                            font=self.view.font_text)
+        self.country_menu.pack(side="left")
+        self.country_edit = self.view._make_pill(country_row, "Править…", self._edit_countries,
+                                                 width=84)
+        self.country_edit.pack(side="left", padx=(6, 0))
+        self.country_hint = tk.Label(country, text="", font=self.view.font_text, bg=t["bg"],
+                                     fg=t["muted"], anchor="w", justify="left", wraplength=500)
+        self.country_hint.pack(fill="x")
+        self.country_var.trace_add("write", lambda *_a: self._on_country_var())
+
         endpoint = tk.Frame(outer, bg=t["bg"])
         endpoint.pack(fill="x")
         tk.Label(endpoint, text="Точка входа", font=self.view.font_text, bg=t["bg"], fg=t["text"],
@@ -3508,6 +3839,97 @@ class CustomWarpSettings:
         except tk.TclError:
             pass
 
+    # -- страна выхода ------------------------------------------------------------
+
+    def _catalog(self):
+        try:
+            import nova_warp_countries as countries
+            base = getattr(self.view.ctx, "base_dir", "")
+            rows = countries.load(base)
+            return list(rows or countries.DEFAULT_CATALOG)
+        except Exception:
+            return [{"id": "any", "title": "Любая (Cloudflare anycast)", "host": "", "port": 0,
+                     "iso": "", "note": ""}]
+
+    def _country_titles(self):
+        titles = [str(row.get("title") or "") for row in self._country_rows]
+        return titles or ["Любая (Cloudflare anycast)"]
+
+    def _title_for(self, country_id):
+        wanted = str(country_id or "any")
+        for row in self._country_rows:
+            if str(row.get("id") or "") == wanted:
+                return str(row.get("title") or wanted)
+        return "Любая (Cloudflare anycast)"
+
+    def _on_country_var(self):
+        """Выбор страны подставляет точку входа; «Любая» возвращает авто-скан."""
+        if self._suppress_country:
+            return
+        title = str(self.country_var.get() or "")
+        cid = self._country_ids.get(title, "any")
+        self.values["country"] = cid
+        host, port = "", 0
+        try:
+            import nova_warp_countries as countries
+            host, port = countries.resolve(self._country_rows, cid)
+        except Exception:
+            host, port = "", 0
+        if cid == "any" or not host:
+            self.values["endpoint_mode"] = "auto"
+            self.values["endpoint_host"] = ""
+        else:
+            self.values["endpoint_mode"] = "manual"
+            self.values["endpoint_host"] = host
+            if port:
+                self.values["endpoint_port"] = port
+        # Показать подставленную точку в полях «Точка входа» — владелец видит,
+        # куда пойдёт профиль, и может поправить вручную. Сначала снимаем
+        # блокировку поля: в неактивном Entry insert/delete бросает TclError.
+        self._apply_endpoint_state()
+        try:
+            self.endpoint_host.delete(0, "end")
+            self.endpoint_host.insert(0, str(self.values.get("endpoint_host") or ""))
+            self.endpoint_port.delete(0, "end")
+            self.endpoint_port.insert(0, str(self.values.get("endpoint_port") or 0))
+        except tk.TclError:
+            pass
+        self._refresh_pills()
+        self._refresh_country_hint()
+        self._mark_custom()
+
+    def _refresh_country_hint(self):
+        cid = str(self.values.get("country") or "any")
+        host = str(self.values.get("endpoint_host") or "").strip()
+        if cid == "any" or not host:
+            text = ("Точку входа ищет сканер Cloudflare." if cid == "any"
+                    else "Для этой страны не задан хост — откройте «Править…» и впишите свой.")
+        else:
+            text = f"Точка входа: {host}:{int(self.values.get('endpoint_port') or 0)}"
+        try:
+            self.country_hint.configure(text=text)
+        except (AttributeError, tk.TclError):
+            pass
+
+    def _edit_countries(self):
+        WarpCountriesEditor(self.view, self._on_countries_saved)
+
+    def _on_countries_saved(self):
+        self._country_rows = self._catalog()
+        self._country_ids = {str(row.get("title") or ""): str(row.get("id") or "any")
+                             for row in self._country_rows}
+        current = str(self.values.get("country") or "any")
+        known = [str(row.get("id") or "") for row in self._country_rows]
+        menu = self.country_menu["menu"]
+        menu.delete(0, "end")
+        for title in self._country_titles():
+            menu.add_command(label=title, command=lambda t=title: self.country_var.set(t))
+        self._suppress_country = True
+        self.country_var.set(self._title_for(current) if current in known
+                             else "Любая (Cloudflare anycast)")
+        self._suppress_country = False
+        self._refresh_country_hint()
+
     # -- state ----------------------------------------------------------------
 
     def alive(self):
@@ -3542,6 +3964,13 @@ class CustomWarpSettings:
             entry.delete(0, "end")
             entry.insert(0, str(value))
         self._apply_endpoint_state()
+        self._suppress_country = True
+        try:
+            self.country_var.set(self._title_for(str(data.get("country") or "any")))
+        except (AttributeError, tk.TclError):
+            pass
+        self._suppress_country = False
+        self._refresh_country_hint()
         self._refresh_pills()
         self._refresh_hint()
 
@@ -3563,8 +3992,18 @@ class CustomWarpSettings:
 
     def _choose_endpoint(self, key):
         self.values["endpoint_mode"] = key
+        if key == "auto":
+            # «Авто (скан)» — это и есть «любая страна»: точку ищет сканер.
+            self.values["country"] = "any"
+            self._suppress_country = True
+            try:
+                self.country_var.set(self._title_for("any"))
+            except (AttributeError, tk.TclError):
+                pass
+            self._suppress_country = False
         self._apply_endpoint_state()
         self._refresh_pills()
+        self._refresh_country_hint()
         self._mark_custom()
 
     def _mark_custom(self):
@@ -3578,6 +4017,8 @@ class CustomWarpSettings:
         import nova_warp_custom_settings as settings
         data = dict(self.values)
         data["preset"] = self.preset
+        data["country"] = self._country_ids.get(
+            str(self.country_var.get() or ""), str(self.values.get("country") or "any"))
         data["endpoint_host"] = self.endpoint_host.get().strip()
         data["endpoint_port"] = self.endpoint_port.get().strip()
         for key in ("dns", "mtu", "keepalive", "sni", "jc", "jmin", "jmax"):
@@ -3597,6 +4038,10 @@ class CustomWarpSettings:
         if data["endpoint_mode"] == "manual" and not data["endpoint_host"]:
             self.set_status("Укажи хост точки входа или выбери «Авто»", "warn")
             return
+        if str(data.get("country") or "any") != "any" and not data["endpoint_host"]:
+            self.set_status("Выбрана страна без хоста — открой «Править…» и впишите свой",
+                            "warn")
+            return
         raw_junk = [self.entries[key].get().strip() for key in ("jc", "jmin", "jmax")]
         if any(raw_junk) and not all(raw_junk):
             self.set_status("Для джанка заполни все три поля или ни одного", "warn")
@@ -3611,6 +4056,242 @@ class CustomWarpSettings:
     def set_status(self, text, tone="muted"):
         if self.alive():
             self.status.configure(text=text, fg=self.view._tone_color(tone))
+
+    def close(self):
+        if not self.alive():
+            return
+        try:
+            self.top.grab_release()
+        except tk.TclError:
+            pass
+        try:
+            self.top.destroy()
+        except tk.TclError:
+            return
+
+
+class WarpCountriesEditor:
+    """Каталог стран выхода (`temp/warp-countries.json`) — список своих серверов.
+
+    Владелец вписывает хост, порт и ISO; «Любая» — служебная запись с `id="any"`,
+    её удаление не мешает: nova_warp_countries вернёт её при следующем чтении.
+    """
+
+    def __init__(self, view, on_saved=None):
+        self.view = view
+        self.on_saved = on_saved
+        self.rows = self._load()
+        self.selected = -1
+        self.top = None
+        self._build()
+        try:
+            self.top.deiconify()
+            self.top.lift()
+            self.top.grab_set()
+            self.top.focus_force()
+        except tk.TclError:
+            pass
+
+    # -- data -----------------------------------------------------------------
+
+    def _base(self):
+        return str(getattr(self.view.ctx, "base_dir", "") or "")
+
+    def _load(self):
+        try:
+            import nova_warp_countries as countries
+            return [dict(row) for row in countries.load(self._base())]
+        except Exception:
+            return [{"id": "any", "title": "Любая (Cloudflare anycast)", "host": "", "port": 0,
+                     "iso": "", "note": ""}]
+
+    @staticmethod
+    def _label(row):
+        try:
+            import nova_warp_countries as countries
+            return countries.label(row) or str(row.get("id") or "")
+        except Exception:
+            return str(row.get("title") or row.get("id") or "")
+
+    def _build(self):
+        t = self.view.theme
+        top = tk.Toplevel(self.view.win)
+        top.withdraw()
+        self.top = top
+        top.title("Страны выхода — каталог")
+        top.resizable(False, False)
+        top.configure(bg=t["bg"], bd=1, highlightthickness=1, highlightbackground=t["border"])
+        self.view._call_ctx_quiet("apply_window_icon", top)
+        try:
+            top.transient(self.view.win)
+        except tk.TclError:
+            pass
+        top.protocol("WM_DELETE_WINDOW", self.close)
+        top.bind("<Escape>", lambda _e: self.close())
+
+        outer = tk.Frame(top, bg=t["bg"], padx=12, pady=10)
+        outer.pack(fill="both", expand=True)
+
+        box = tk.Frame(outer, bg=t["panel"], highlightthickness=1, highlightbackground=t["border"],
+                       bd=0)
+        box.pack(fill="both", expand=True)
+        self.listbox = tk.Listbox(box, height=8, width=58, activestyle="none",
+                                  selectmode="browse", exportselection=False, bd=0, relief="flat",
+                                  highlightthickness=0, bg=t["panel"], fg=t["text"],
+                                  selectbackground=t["pill_on_bg"],
+                                  selectforeground=t["pill_on_fg"], font=self.view.font_text)
+        scroll = ThemedScrollbar(box, self.listbox.yview, t, self.view.dark)
+        self.listbox.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y", pady=2)
+        self.listbox.pack(side="left", fill="both", expand=True, padx=(6, 0), pady=4)
+        self.listbox.bind("<<ListboxSelect>>", lambda _e: self._on_select())
+
+        grid = tk.Frame(outer, bg=t["bg"])
+        grid.pack(fill="x", pady=(8, 0))
+        grid.grid_columnconfigure(1, weight=1)
+        self.fields = {}
+        specs = (("title", "Название", 34), ("host", "Хост", 30), ("port", "Порт", 6),
+                 ("iso", "ISO", 5), ("note", "Заметка", 30))
+        for row_index, (key, caption, width) in enumerate(specs):
+            tk.Label(grid, text=caption, font=self.view.font_text, bg=t["bg"], fg=t["text"],
+                     anchor="w").grid(row=row_index, column=0, sticky="w", padx=(0, 6), pady=3)
+            entry = tk.Entry(grid, width=width, font=self.view.font_text, bd=0, relief="flat",
+                             bg=t["panel"], fg=t["text"], insertbackground=t["text"],
+                             highlightthickness=1, highlightbackground=t["border"],
+                             highlightcolor=t.get("pill_on_fg", t["text"]))
+            entry.grid(row=row_index, column=1, sticky="we", pady=3)
+            self.fields[key] = entry
+
+        buttons = tk.Frame(outer, bg=t["bg"])
+        buttons.pack(fill="x", pady=(10, 0))
+        for caption, handler, width in (("Добавить", self._add, 84),
+                                        ("Изменить", self._update, 84),
+                                        ("Удалить", self._delete, 84)):
+            pill = self.view._make_pill(buttons, caption, handler, width=width)
+            pill.pack(side="left", padx=(0, 6))
+        self.save_pill = self.view._make_pill(buttons, "Сохранить", self._save, width=96)
+        self.save_pill.set_selected(True)
+        self.save_pill.pack(side="right")
+        self.cancel_pill = self.view._make_pill(buttons, "Отмена", self.close, width=80)
+        self.cancel_pill.pack(side="right", padx=(0, 6))
+
+        self.status = tk.Label(outer, text="", font=self.view.font_text, bg=t["bg"],
+                               fg=self.view._tone_color("muted"), anchor="w")
+        self.status.pack(fill="x", pady=(6, 0))
+
+        top.update_idletasks()
+        top.minsize(max(520, top.winfo_reqwidth()), top.winfo_reqheight())
+        self._place()
+        apply_title_bar_theme(top, self.view.dark)
+        self._rebuild_list()
+        nova_tooltips.attach_tree(top)
+
+    def _place(self):
+        try:
+            owner = self.view.win
+            x = owner.winfo_rootx() + max(0, (owner.winfo_width() - self.top.winfo_reqwidth()) // 2)
+            y = owner.winfo_rooty() + 60
+            self.top.geometry(f"+{max(0, x)}+{max(0, y)}")
+        except tk.TclError:
+            pass
+
+    def alive(self):
+        try:
+            return bool(self.top is not None and self.top.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def set_status(self, text, tone="muted"):
+        if self.alive():
+            self.status.configure(text=text, fg=self.view._tone_color(tone))
+
+    # -- list -----------------------------------------------------------------
+
+    def _rebuild_list(self):
+        self.listbox.delete(0, "end")
+        for row in self.rows:
+            self.listbox.insert("end", self._label(row))
+        if 0 <= self.selected < len(self.rows):
+            self.listbox.selection_set(self.selected)
+
+    def _on_select(self):
+        selection = self.listbox.curselection()
+        if not selection:
+            return
+        self.selected = selection[0]
+        row = self.rows[self.selected]
+        for key, entry in self.fields.items():
+            entry.delete(0, "end")
+            value = row.get(key, "")
+            entry.insert(0, "" if value in (0, "0") else str(value))
+
+    def _draft(self):
+        return {
+            "title": self.fields["title"].get().strip(),
+            "host": self.fields["host"].get().strip().rstrip("."),
+            "port": self.fields["port"].get().strip(),
+            "iso": self.fields["iso"].get().strip(),
+            "note": self.fields["note"].get().strip(),
+        }
+
+    def _add(self):
+        import nova_warp_countries as countries
+        draft = self._draft()
+        if not draft["title"]:
+            self.set_status("Введите название страны", "warn")
+            return
+        row = countries.normalize_entry({
+            "id": draft["title"], "title": draft["title"], "host": draft["host"],
+            "port": draft["port"], "iso": draft["iso"], "note": draft["note"],
+        })
+        if row is None:
+            self.set_status("Хост выглядит неверно — только имя или IP", "warn")
+            return
+        if countries.by_id(self.rows, row["id"]) is not None:
+            self.set_status(f"Страна «{row['title']}» уже есть", "warn")
+            return
+        self.rows.append(row)
+        self.selected = len(self.rows) - 1
+        self._rebuild_list()
+        self.set_status(f"Добавлено: {self._label(row)}", "ok")
+
+    def _update(self):
+        if not (0 <= self.selected < len(self.rows)):
+            self.set_status("Выберите страну в списке", "warn")
+            return
+        import nova_warp_countries as countries
+        draft = self._draft()
+        row = dict(self.rows[self.selected])
+        row.update({key: value for key, value in draft.items()})
+        fixed = countries.normalize_entry(row)
+        if fixed is None:
+            self.set_status("Хост выглядит неверно — только имя или IP", "warn")
+            return
+        self.rows[self.selected] = fixed
+        self._rebuild_list()
+        self.set_status(f"Изменено: {self._label(fixed)}", "ok")
+
+    def _delete(self):
+        if not (0 <= self.selected < len(self.rows)):
+            self.set_status("Выберите страну в списке", "warn")
+            return
+        removed = self.rows.pop(self.selected)
+        self.selected = max(0, self.selected - 1)
+        self._rebuild_list()
+        self.set_status(f"Удалено: {self._label(removed)}", "muted")
+
+    def _save(self):
+        import nova_warp_countries as countries
+        saved = countries.save(self._base(), self.rows)
+        self.rows = [dict(row) for row in saved]
+        self._rebuild_list()
+        if callable(self.on_saved):
+            try:
+                self.on_saved()
+            except Exception:
+                pass
+        self.view._notice("Каталог стран сохранён", "ok")
+        self.close()
 
     def close(self):
         if not self.alive():

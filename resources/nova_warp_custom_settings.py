@@ -56,6 +56,9 @@ PRESET_ORDER = ("optimal", "fast", "compat", "custom")
 
 DEFAULTS = {
     "preset": "optimal",
+    # Страна выхода: id из temp/warp-countries.json либо "any" (авто-скан).
+    # Сам host/port уже подставлены в endpoint_*, поэтому здесь только ярлык.
+    "country": "any",
     "endpoint_mode": "auto",
     "endpoint_host": "",
     "endpoint_port": 2408,
@@ -106,6 +109,9 @@ PRESETS: dict[str, dict[str, Any]] = {
 _HOST_RE = re.compile(r"^[A-Za-z0-9._:-]{1,255}$")
 _SNI_RE = re.compile(r"^[A-Za-z0-9.-]{1,250}$")
 _DNS_RE = re.compile(r"^[A-Za-z0-9.:_-]{1,64}$")
+# id страны из nova_warp_countries («any», «fi», «lte-de»); прочее — «any».
+COUNTRY_ANY = "any"
+_COUNTRY_RE = re.compile(r"^[a-z0-9_-]{1,24}$")
 
 
 def _int(value, default, low, high):
@@ -129,6 +135,8 @@ def normalize(raw) -> dict:
         data.update({key: raw[key] for key in DEFAULTS if key in raw})
     preset = str(data.get("preset") or "optimal").strip().lower()
     data["preset"] = preset if preset in PRESET_ORDER else "optimal"
+    country = str(data.get("country") or COUNTRY_ANY).strip().lower()
+    data["country"] = country if _COUNTRY_RE.match(country) else COUNTRY_ANY
     mode = str(data.get("endpoint_mode") or "auto").strip().lower()
     data["endpoint_mode"] = mode if mode in ("auto", "manual") else "auto"
     host = str(data.get("endpoint_host") or "").strip()
@@ -160,9 +168,13 @@ def apply_preset(preset: str, current=None) -> dict:
         return data
     if name in PRESETS:
         host = data.get("endpoint_host", "")
+        country = data.get("country", COUNTRY_ANY)
         data.update(PRESETS[name]["values"])
         data["preset"] = name
         data["endpoint_host"] = host
+        # Страна — выбор владельца, а не часть пресета: применение «Оптимальный»
+        # не должно сбрасывать её на «любую».
+        data["country"] = country
         return normalize(data)
     return data
 
@@ -186,6 +198,7 @@ def resolve(settings) -> dict:
         "junk": junk,
         "endpoint_attempts": data["endpoint_attempts"],
         "sni_attempts": data["sni_attempts"],
+        "country": data.get("country", COUNTRY_ANY),
     }
 
 

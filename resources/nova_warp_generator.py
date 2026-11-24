@@ -46,6 +46,7 @@ __all__ = [
     "should_reissue",
     "note_outcome",
     "load_state",
+    "load_custom_meta",
     "generate",
 ]
 
@@ -75,6 +76,7 @@ CUSTOM_WARP_PREFIX = "WARPgen_custom_"
 BUNDLED_WARP_PREFIX = "WARPv"
 IDENTITY_FILENAME = "warp_identity.json"
 STATE_FILENAME = "warp-generated-state.json"
+CUSTOM_META_FILENAME = "warp-custom-meta.json"
 TEMP_DIRNAME = "temp"
 
 LOG_PREFIX = "[WARP-ген]"
@@ -538,6 +540,28 @@ def _write_json_atomic(path: str, data: dict) -> None:
         except OSError:
             pass
         raise
+
+
+def load_custom_meta(base_dir: str) -> dict:
+    """Что генератор записал о своих разовых профилях: name → {endpoint, observed_*}.
+
+    Без ключей и путей (I19); отсутствующий или битый файл — пустой словарь.
+    """
+    with _STATE_LOCK:
+        data = _read_json(os.path.join(base_dir, TEMP_DIRNAME, CUSTOM_META_FILENAME))
+    return data if isinstance(data, dict) else {}
+
+
+def _remember_custom_meta(base_dir: str, name: str, info: dict) -> None:
+    with _STATE_LOCK:
+        data = _read_json(os.path.join(base_dir, TEMP_DIRNAME, CUSTOM_META_FILENAME))
+        if not isinstance(data, dict):
+            data = {}
+        data[str(name)] = info
+        try:
+            _write_json_atomic(os.path.join(base_dir, TEMP_DIRNAME, CUSTOM_META_FILENAME), data)
+        except OSError:
+            pass
 
 
 def load_state(base_dir: str) -> dict:
@@ -1193,10 +1217,114 @@ def _probe_config(text: str, base_dir: str, wireproxy_path: str,
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def _socks5_exit_info(port: int, timeout: float = 6.0) -> dict | None:
+    """Выход туннеля через SOCKS5 → {ip, loc}: `http://ip-api.com/json`.
+
+    Обычный HTTP, без TLS и внешних программ: генератор живёт в потоке Nova и не
+    должен зависеть от curl. `loc` — ISO-код страны выхода, по нему видно, куда
+    реально увёл туннель выбранная точка входа.
+    """
+    host = "ip-api.com"
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            sock.sendall(b"\x05\x01\x00")
+            if sock.recv(2) != b"\x05\x00":
+                return None
+            name = host.encode("ascii")
+            sock.sendall(b"\x05\x01\x00\x03" + bytes([len(name)]) + name + b"\x00\x50")
+            reply = sock.recv(4)
+            if len(reply) < 4 or reply[1] != 0:
+                return None
+            atyp = reply[3]
+            if atyp == 1:
+                sock.recv(4)
+            elif atyp == 3:
+                length = sock.recv(1)
+                if length:
+                    sock.recv(length[0])
+            elif atyp == 4:
+                sock.recv(16)
+            sock.recv(2)
+            sock.sendall(f"GET /json/?fields=status,countryCode,query HTTP/1.1\r\n"
+                         f"Host: {host}\r\nConnection: close\r\n\r\n".encode("ascii"))
+            chunks = []
+            while True:
+                data = sock.recv(4096)
+                if not data:
+                    break
+                chunks.append(data)
+                if b'"query"' in b"".join(chunks):
+                    break
+            text = b"".join(chunks).decode("utf-8", "replace")
+            body = text.split("\r\n\r\n", 1)[-1]
+            payload = json.loads(body) if body.strip() else {}
+            if payload.get("status") == "success" and payload.get("query"):
+                return {"ip": str(payload.get("query")),
+                        "loc": str(payload.get("countryCode") or "").upper()}
+            return None
+    except (OSError, ValueError):
+        return None
+
+
+def _probe_exit(text: str, base_dir: str, wireproxy_path: str,
+                timeout: float = PROBE_HTTP_TIMEOUT_SEC) -> dict | None:
+    """Снять `{ip, loc}` выхода с готового конфига; None — туннель не поднялся.
+
+    Отдельный прогон, а не часть `_probe_config`: та проверяет 204 и вызывается
+    много раз перебором, а trace дорогой и нужен один раз — для того эндпоинта,
+    который уже прошёл проверку.
+    """
+    helper = str(wireproxy_path or "").strip()
+    if not helper or not os.path.exists(helper):
+        return None
+    port = _free_loopback_port()
+    if not port:
+        return None
+    workdir = tempfile.mkdtemp(prefix="nova-warp-trace-")
+    cfg_path = os.path.join(workdir, "trace.conf")
+    proc = None
+    try:
+        payload = text.rstrip("\n") + f"\n\n[Socks5]\nBindAddress = 127.0.0.1:{port}\n"
+        with open(cfg_path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(payload)
+        proc = subprocess.Popen(
+            [helper, "-c", cfg_path],
+            cwd=base_dir if os.path.isdir(base_dir) else None,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+            creationflags=_CREATE_NO_WINDOW,
+        )
+        deadline = time.time() + PROBE_BOOT_SEC
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                return None
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.4):
+                    return _socks5_exit_info(port, timeout=timeout)
+            except OSError:
+                time.sleep(0.2)
+        return None
+    except OSError:
+        return None
+    finally:
+        if proc is not None:
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait(timeout=2)
+            except OSError:
+                pass
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
 def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress=None,
                         host="", port=0, dns="", mtu=1280, keepalive=25, sni="", junk=None,
                         wireproxy_path="", probe=True, endpoint_attempts=None,
-                        sni_attempts=None) -> dict:
+                        sni_attempts=None, country="") -> dict:
     """Create one WARP/AWG profile in `profiles/Custom` and leave the rest untouched.
 
     This is the «Сгенерировать» path in the Custom AWG tab. It deliberately does
@@ -1348,6 +1476,20 @@ def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress
     assert endpoint is not None  # set together with `text` above
     log(f"{LOG_PREFIX} custom: создан {profile_id} через {endpoint['host']}:{endpoint['port']}"
         + (f" (проверен за {attempts} попыт.)" if verify else "") + ".")
+    exit_info = None
+    if verify and helper:
+        exit_info = _probe_exit(text, base_dir, helper)
+        if exit_info:
+            log(f"{LOG_PREFIX} custom: выход {exit_info['ip']} ({exit_info['loc']}).")
+        else:
+            log(f"{LOG_PREFIX} custom: выход не измерен (trace недоступен).")
+    _remember_custom_meta(base_dir, name, {
+        "endpoint": f"{endpoint['host']}:{endpoint['port']}",
+        "country": str(country or ""),
+        "observed_ip": (exit_info or {}).get("ip", ""),
+        "observed_loc": (exit_info or {}).get("loc", ""),
+        "checked_at": now,
+    })
     summary.update({
         "ok": True,
         "profile_id": profile_id,
@@ -1357,6 +1499,8 @@ def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress
         "name": name,
         "probed": verify,
         "attempts": attempts,
+        "observed_country": (exit_info or {}).get("loc", ""),
+        "observed_ip": (exit_info or {}).get("ip", ""),
     })
     _progress(progress, f"WARP: создан {name}", 1, 1)
     return summary

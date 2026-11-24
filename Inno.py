@@ -1559,6 +1559,8 @@ def build_pyinstaller_dist(base_dir: Path, release_dir: Path) -> Path:
         # not crash), which is exactly the shape PyInstaller can miss. Named here so it cannot.
         "--hidden-import=nova_vless",
         "--hidden-import=nova_subscriptions",
+        "--hidden-import=nova_warp_countries",
+        "--hidden-import=nova_dns_catalog",
         "--hidden-import=nova_ping",
         "--hidden-import=nova_route_spec",
         "--hidden-import=nova_captcha_window",
