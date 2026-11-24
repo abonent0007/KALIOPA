@@ -33708,6 +33708,23 @@ function FindProxyForURLEx(url, host) {{
 
                 _start_profiles_thread(_worker, "NovaDnsApply")
 
+            def discover_warp_countries(self, done_cb=None):
+                """Скан Cloudflare + замер стран выхода; ответ в done_cb(rows, error)."""
+
+                def _worker():
+                    logger = globals().get("log_print", print)
+                    try:
+                        rows, error = nova_warp_generator.discover_countries(
+                            get_base_dir(), os.path.join(get_bin_dir(), "nova-go.exe"),
+                            log=logger)
+                    except Exception as exc:
+                        rows, error = [], f"{type(exc).__name__}: {exc}"
+                    if callable(done_cb):
+                        done_cb(rows, error)
+
+                threading.Thread(target=_worker, daemon=True,
+                                 name="NovaCountries").start()
+
             def test_dns(self, targets, done_cb=None):
                 """Проверить резолверы реальным A-запросом; ответ приходит в done_cb."""
 

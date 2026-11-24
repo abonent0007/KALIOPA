@@ -34,6 +34,7 @@ __all__ = [
 
 import json
 import os
+import re
 import socket
 import time
 
@@ -132,23 +133,25 @@ def by_id(rows, resolver_id):
 
 
 def addresses_of(row) -> list[str]:
-    """Известные адреса резолвера; для доменного — разрешённые сейчас."""
-    ips = [str(item).strip() for item in (row or {}).get("ips") or () if str(item).strip()]
-    if ips:
-        return ips
-    host = str((row or {}).get("host") or "").strip()
-    if not host:
-        return []
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except OSError:
-        return []
-    out = []
-    for info in infos:
-        value = str(info[4][0]).strip()
-        if value and value not in out:
-            out.append(value)
-    return out
+    """Адреса резолвера: сначала живой DNS-запрос по имени, при неудаче —
+    сохранённые адреса из каталога (у заблокированных имён система может
+    отвечать отравленным ответом или молчать)."""
+    row = row or {}
+    host = str(row.get("host") or "").strip()
+    static = [str(item).strip() for item in row.get("ips") or () if str(item).strip()]
+    if host and ":" not in host and not re.match(r"^\d{1,3}(\.\d{1,3}){3}$", host):
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except OSError:
+            infos = []
+        live = []
+        for info in infos:
+            value = str(info[4][0]).strip()
+            if value and value not in live:
+                live.append(value)
+        if live:
+            return live[:8]
+    return static[:8]
 
 
 def _query(server, timeout, query_fn):

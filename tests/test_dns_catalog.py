@@ -4,6 +4,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "resources"))
 
@@ -58,6 +59,19 @@ class CheckTests(unittest.TestCase):
     def test_check_many_covers_every_row(self):
         out = catalog.check_many(catalog.resolvers(), query_fn=lambda server, timeout: True)
         self.assertEqual(len(catalog.resolvers()), len(out))
+
+    def test_domain_is_resolved_dynamically_first(self):
+        row = {"id": "x", "host": "dns.example", "ips": ["192.0.2.9"],
+               "community": False, "note": ""}
+        fake = [(None, None, None, None, ("192.0.2.50", 0))]
+        with mock.patch.object(catalog.socket, "getaddrinfo", return_value=fake):
+            self.assertEqual(["192.0.2.50"], catalog.addresses_of(row))
+
+    def test_static_addresses_are_the_fallback(self):
+        row = {"id": "x", "host": "dns.example", "ips": ["192.0.2.9"],
+               "community": False, "note": ""}
+        with mock.patch.object(catalog.socket, "getaddrinfo", side_effect=OSError()):
+            self.assertEqual(["192.0.2.9"], catalog.addresses_of(row))
 
 
 class RoutesTests(unittest.TestCase):

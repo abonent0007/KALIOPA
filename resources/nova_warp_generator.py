@@ -47,6 +47,7 @@ __all__ = [
     "note_outcome",
     "load_state",
     "load_custom_meta",
+    "discover_countries",
     "generate",
 ]
 
@@ -1121,6 +1122,31 @@ def _free_loopback_port() -> int:
         return 0
 
 
+def _socks5_handshake(sock, host: str, port: int, timeout: float = PROBE_HTTP_TIMEOUT_SEC) -> bool:
+    """SOCKS5-подключение к `host:port` через уже открытый сокет; False при отказе."""
+    sock.settimeout(timeout)
+    sock.sendall(b"\x05\x01\x00")
+    if sock.recv(2) != b"\x05\x00":
+        return False
+    name = host.encode("ascii")
+    sock.sendall(b"\x05\x01\x00\x03" + bytes([len(name)]) + name
+                 + bytes([(int(port) >> 8) & 0xFF, int(port) & 0xFF]))
+    reply = sock.recv(4)
+    if len(reply) < 4 or reply[1] != 0:
+        return False
+    atyp = reply[3]
+    if atyp == 1:
+        sock.recv(4)
+    elif atyp == 3:
+        length = sock.recv(1)
+        if length:
+            sock.recv(length[0])
+    elif atyp == 4:
+        sock.recv(16)
+    sock.recv(2)
+    return True
+
+
 def _socks5_fetch_204(port: int, timeout: float = PROBE_HTTP_TIMEOUT_SEC) -> bool:
     """True when a plain HTTP GET through the probe's SOCKS5 returns 204.
 
@@ -1132,24 +1158,8 @@ def _socks5_fetch_204(port: int, timeout: float = PROBE_HTTP_TIMEOUT_SEC) -> boo
     host = b"www.gstatic.com"
     try:
         with socket.create_connection(("127.0.0.1", int(port)), timeout=timeout) as sock:
-            sock.settimeout(timeout)
-            sock.sendall(b"\x05\x01\x00")
-            if sock.recv(2) != b"\x05\x00":
+            if not _socks5_handshake(sock, host.decode("ascii"), 80):
                 return False
-            sock.sendall(b"\x05\x01\x00\x03" + bytes([len(host)]) + host + b"\x00\x50")
-            reply = sock.recv(4)
-            if len(reply) < 4 or reply[1] != 0:
-                return False
-            atyp = reply[3]
-            if atyp == 1:
-                sock.recv(4)
-            elif atyp == 3:
-                length = sock.recv(1)
-                if length:
-                    sock.recv(length[0])
-            elif atyp == 4:
-                sock.recv(16)
-            sock.recv(2)
             sock.sendall(b"GET /generate_204 HTTP/1.1\r\nHost: www.gstatic.com\r\n"
                          b"Connection: close\r\n\r\n")
             status = sock.recv(64)
@@ -1227,25 +1237,8 @@ def _socks5_exit_info(port: int, timeout: float = 6.0) -> dict | None:
     host = "ip-api.com"
     try:
         with socket.create_connection(("127.0.0.1", int(port)), timeout=timeout) as sock:
-            sock.settimeout(timeout)
-            sock.sendall(b"\x05\x01\x00")
-            if sock.recv(2) != b"\x05\x00":
+            if not _socks5_handshake(sock, host, 80):
                 return None
-            name = host.encode("ascii")
-            sock.sendall(b"\x05\x01\x00\x03" + bytes([len(name)]) + name + b"\x00\x50")
-            reply = sock.recv(4)
-            if len(reply) < 4 or reply[1] != 0:
-                return None
-            atyp = reply[3]
-            if atyp == 1:
-                sock.recv(4)
-            elif atyp == 3:
-                length = sock.recv(1)
-                if length:
-                    sock.recv(length[0])
-            elif atyp == 4:
-                sock.recv(16)
-            sock.recv(2)
             sock.sendall(f"GET /json/?fields=status,countryCode,query HTTP/1.1\r\n"
                          f"Host: {host}\r\nConnection: close\r\n\r\n".encode("ascii"))
             chunks = []
@@ -1319,6 +1312,66 @@ def _probe_exit(text: str, base_dir: str, wireproxy_path: str,
             except OSError:
                 pass
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def discover_countries(base_dir, nova_go_path, *, log=print, limit: int = 20,
+                       sni_attempts: int = 2) -> tuple[list[dict], str]:
+    """Скан точек Cloudflare + замер страны выхода → записи каталога.
+
+    Вводить страны вручную не нужно: функция перебирает проверенные точки,
+    поднимает каждый туннель и спрашивает ip-api, в какую страну он вышла.
+    Точка с первой неудачной пробой повторяется с другим прикрытием. Возвращает
+    `(rows, error)`; rows годится для `nova_warp_countries.save`.
+    """
+    identity, problem = _load_identity(base_dir)
+    if not identity:
+        return [], problem or "нет зарегистрированной личности WARP"
+    verified, scan_error = _collect_verified(nova_go_path, identity, log, None, 1)
+    endpoints = _durable_endpoints(diversify(verified))[:max(1, int(limit))]
+    if not endpoints:
+        return [], (_scan_error_reason(scan_error) if scan_error
+                    else "сканер не нашёл точек входа")
+    helper = os.path.join(os.path.dirname(str(nova_go_path)), "wireproxy-awg.exe")
+    rng = random.Random()
+    found: dict[str, dict] = {}
+    for index, endpoint in enumerate(endpoints, start=1):
+        host = str(endpoint.get("host") or "")
+        try:
+            port = int(endpoint.get("port") or 0)
+        except (TypeError, ValueError):
+            port = 0
+        if not host or not port:
+            continue
+        for _attempt in range(max(1, int(sni_attempts))):
+            sni = nova_quic_initial.pick_sni(rng.randrange(len(nova_quic_initial.WHITE_SNI)))
+            try:
+                i1 = nova_quic_initial.build_i1(sni)
+            except Exception:
+                continue
+            text = build_warp_conf(identity, host, port, random_junk(rng), i1)
+            info = _probe_exit(text, base_dir, helper)
+            if not info or not info.get("loc"):
+                continue
+            loc = str(info["loc"]).strip().upper()
+            if loc in found:
+                break
+            try:
+                import nova_warp_countries as countries
+                row = countries.normalize_entry({
+                    "id": loc.lower(), "title": countries.title_for_iso(loc),
+                    "host": host, "port": port, "iso": loc,
+                    "note": f"замерено: выход {info.get('ip', '')}".strip(),
+                })
+            except Exception:
+                row = {"id": loc.lower(), "title": loc, "host": host, "port": port,
+                       "iso": loc, "note": ""}
+            if row:
+                found[loc] = row
+            break
+        log(f"{LOG_PREFIX} страны: проверено {index} из {len(endpoints)}, "
+            f"найдено {len(found)}.")
+    rows = [found[key] for key in sorted(found)]
+    return rows, ("" if rows else "не удалось замерить ни одну страну выхода")
 
 
 def generate_custom_one(base_dir, nova_go_path, *, log, api_proxy=None, progress=None,

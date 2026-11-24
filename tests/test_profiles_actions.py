@@ -36,7 +36,7 @@ class ActionWiringTests(unittest.TestCase):
                                     f"у окна нет метода {method!r} для {action!r}")
 
     def test_dns_actions_are_wired(self):
-        for action in ("dns_test", "dns_test_all", "dns_apply", "dns_reset"):
+        for action in ("dns_test_all", "dns_apply", "dns_reset"):
             self.assertIn(action, ui.ACTION_LABELS)
             self.assertTrue(hasattr(ui.ProfilesWindow, ui._ACTION_METHODS[action]))
 

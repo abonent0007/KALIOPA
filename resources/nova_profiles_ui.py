@@ -121,7 +121,6 @@ ACTION_LABELS = {
     "tor_toggle": "Подключить Tor",
     "tor_new_identity": "Новая цепочка",
     "tor_refresh_bridges": "Обновить мосты",
-    "dns_test": "Проверить",
     "dns_test_all": "Проверить все",
     "dns_apply": "Применить",
     "dns_reset": "Сбросить",
@@ -176,7 +175,6 @@ _ACTION_METHODS = {
     "tor_toggle": "_on_tor_toggle",
     "tor_new_identity": "_on_tor_new_identity",
     "tor_refresh_bridges": "_on_tor_refresh_bridges",
-    "dns_test": "_on_dns_test_all",
     "dns_test_all": "_on_dns_test_all",
     "dns_apply": "_on_dns_apply",
     "dns_reset": "_on_dns_reset",
@@ -1633,6 +1631,15 @@ class ProfilesWindow:
         else:
             self._set_label(status, f"✗ {result.get('error') or 'нет ответа'}", "fail")
 
+    def _dns_maybe_autocheck(self):
+        """Один раз на состав каталога: проверяем все DNS при открытии вкладки."""
+        rows = self._dns_catalog()
+        signature = tuple(str(row.get("id") or "") for row in rows)
+        if not signature or signature == getattr(self, "_dns_autochecked", None):
+            return
+        self._dns_autochecked = signature
+        self._on_dns_test_all()
+
     def _dns_dirty(self):
         saved_routes = getattr(self, "_dns_saved_routes", {}) or {}
         for route, var in self._dns_route_vars.items():
@@ -1952,6 +1959,20 @@ class ProfilesWindow:
             self.win.update_idletasks()
         except tk.TclError:
             return
+        # Первое открытие — сразу на ширину не уже 900px: содержимое (особенно
+        # вкладка DNS) иначе приходится растягивать руками.
+        if not getattr(self, "_opened_once", False):
+            self._opened_once = True
+            try:
+                width = max(int(self.win.winfo_reqwidth()),
+                            int(self._min_content_px) + int(self._outer_pad_px), 900)
+                height = max(int(self.win.winfo_reqheight()), 1)
+                self.win.geometry(f"{width}x{height}")
+                self._apply_content_width(
+                    max(int(self._content_px), width - int(self._outer_pad_px)))
+                self.win.update_idletasks()
+            except tk.TclError:
+                pass
         self.place()
         try:
             self.win.deiconify()
@@ -2484,6 +2505,11 @@ class ProfilesWindow:
         elif tab == TAB_DNS:
             self.dns_panel.tkraise()
             self._render_dns_panel()
+            # Назначения могли измениться на диске — читаем их при входе на вкладку.
+            self._render_dns_routes(
+                self._dns_catalog(),
+                {"routes": self._dns_routes_data().get("routes") or {}})
+            self._dns_maybe_autocheck()
         else:
             # The subscriptions tab borrows the list panel: its rows are subscriptions, not
             # profiles, and `_row_ids` then holds subscription ids — every reader of it goes
@@ -3690,6 +3716,13 @@ class CustomWarpSettings:
             self.top.focus_force()
         except tk.TclError:
             pass
+        # Страны определяем сами один раз за сеанс: вводить хосты вручную не нужно.
+        if not getattr(self.view, "_nova_countries_autodiscovered", False):
+            self.view._nova_countries_autodiscovered = True
+            try:
+                self.top.after(600, self._auto_discover_countries)
+            except (AttributeError, tk.TclError):
+                pass
 
     # -- construction ---------------------------------------------------------
 
@@ -3752,6 +3785,9 @@ class CustomWarpSettings:
         self.country_edit = self.view._make_pill(country_row, "Править…", self._edit_countries,
                                                  width=84)
         self.country_edit.pack(side="left", padx=(6, 0))
+        self.country_find = self.view._make_pill(country_row, "Найти страны…",
+                                                 self._on_discover_countries, width=122)
+        self.country_find.pack(side="left", padx=(6, 0))
         self.country_hint = tk.Label(country, text="", font=self.view.font_text, bg=t["bg"],
                                      fg=t["muted"], anchor="w", justify="left", wraplength=500)
         self.country_hint.pack(fill="x")
@@ -3931,16 +3967,79 @@ class CustomWarpSettings:
         self._country_ids = {str(row.get("title") or ""): str(row.get("id") or "any")
                              for row in self._country_rows}
         current = str(self.values.get("country") or "any")
-        known = [str(row.get("id") or "") for row in self._country_rows]
+        self._rebuild_country_menu()
+        self._suppress_country = True
+        self.country_var.set(self._title_for(current) if current in [
+            str(row.get("id") or "") for row in self._country_rows]
+            else "Любая (Cloudflare anycast)")
+        self._suppress_country = False
+        self._refresh_country_hint()
+
+    def _rebuild_country_menu(self):
         menu = self.country_menu["menu"]
         menu.delete(0, "end")
         for title in self._country_titles():
             menu.add_command(label=title, command=lambda t=title: self.country_var.set(t))
-        self._suppress_country = True
-        self.country_var.set(self._title_for(current) if current in known
-                             else "Любая (Cloudflare anycast)")
-        self._suppress_country = False
+
+    # -- автоопределение стран ----------------------------------------------------
+
+    def _has_concrete_countries(self):
+        return any(str(row.get("id") or "") != "any" for row in self._country_rows)
+
+    def _auto_discover_countries(self):
+        """Один раз за сеанс: если каталог пуст, определяем страны сами."""
+        if self._has_concrete_countries() or getattr(self, "_discovering", False):
+            return
+        self._on_discover_countries()
+
+    def _on_discover_countries(self):
+        fn = getattr(self.view.ctx, "discover_warp_countries", None)
+        if not callable(fn):
+            self.country_hint.configure(text="Каталог пуст: откройте «Править…» и впишите хост.")
+            return
+        if getattr(self, "_discovering", False):
+            return
+        self._discovering = True
+        self.country_hint.configure(text="Определяем страны: скан Cloudflare и замер выхода…")
+        view = self.view
+        results = view._results
+
+        def done_cb(payload):
+            rows, error = payload if (isinstance(payload, tuple) and len(payload) == 2) else ([], "")
+            results.put((lambda value, _err: self._on_discover_done(value), (rows, error), None))
+
+        try:
+            fn(done_cb)
+        except Exception as exc:
+            self._discovering = False
+            self.country_hint.configure(text=f"Страны не определены: {type(exc).__name__}")
+            return
+        view._ensure_drain()
+
+    def _on_discover_done(self, payload):
+        self._discovering = False
+        rows, error = payload if (isinstance(payload, tuple) and len(payload) == 2) else ([], "")
+        if not rows:
+            self.country_hint.configure(text=error or "Страны не определены")
+            return
+        saved = self._merge_countries(rows)
+        self._country_rows = saved
+        self._country_ids = {str(row.get("title") or ""): str(row.get("id") or "any")
+                             for row in saved}
+        self._rebuild_country_menu()
         self._refresh_country_hint()
+        self.view._notice(f"Определено стран выхода: {len(rows)}", "ok")
+
+    def _merge_countries(self, rows):
+        import nova_warp_countries as countries
+        base = str(getattr(self.view.ctx, "base_dir", "") or "")
+        current = {str(row.get("id") or ""): dict(row) for row in self._country_rows}
+        for raw in rows or []:
+            fixed = countries.normalize_entry(raw)
+            if fixed:
+                current[fixed["id"]] = fixed
+        saved = countries.save(base, list(current.values()))
+        return [dict(row) for row in saved]
 
     # -- state ----------------------------------------------------------------
 
