@@ -230,6 +230,10 @@ JOB_START_GRACE_S = 10.0
 NOTICE_TTL_S = 20.0
 # One ctx status getter gets this long per refresh; after that the refresh uses its last value.
 STATUS_GETTER_TIMEOUT_S = 3.0
+# Единая ширина модальных окон «Профилей»: раньше настройки генератора (560),
+# редактор стран (520) и импорт (~700) открывались разной ширины, и в узких
+# оставляли кнопки за краем. Теперь у всех нижняя граница одна.
+PROFILE_DIALOG_WIDTH = 640
 # A refresh worker (profile files included) running longer than this is reported once.
 REFRESH_STALL_S = 10.0
 _STATUS_GETTERS = (("get_runtime_status", "runtime", {}), ("job_status", "jobs", {}), ("tor_status", "tor", None))
@@ -1506,10 +1510,37 @@ class ProfilesWindow:
         t = self.theme
         self.dns_header = self._label(panel)
         self.dns_header.pack(fill="x", pady=(0, 4))
-        self.dns_rows = tk.Frame(panel, bg=t["bg"])
+        # Вкладка может быть выше экрана (10 резолверов + 9 маршрутов), поэтому
+        # содержимое скроллится, а кнопки действий остаются внизу окна.
+        wrap = tk.Frame(panel, bg=t["bg"])
+        wrap.pack(fill="both", expand=True)
+        canvas = tk.Canvas(wrap, bg=t["bg"], highlightthickness=0, height=360,
+                           bd=0, relief="flat")
+        vbar = ThemedScrollbar(wrap, canvas.yview, t, self.dark)
+        canvas.configure(yscrollcommand=vbar.set)
+        vbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        inner = tk.Frame(canvas, bg=t["bg"])
+        inner_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def _on_inner(_event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas(event):
+            canvas.itemconfigure(inner_id, width=int(event.width))
+
+        def _on_wheel(event):
+            canvas.yview_scroll(int(-event.delta / 120), "units")
+
+        inner.bind("<Configure>", _on_inner)
+        canvas.bind("<Configure>", _on_canvas)
+        canvas.bind("<MouseWheel>", _on_wheel)
+        inner.bind("<MouseWheel>", _on_wheel)
+
+        self.dns_rows = tk.Frame(inner, bg=t["bg"])
         self.dns_rows.pack(fill="x")
 
-        custom = tk.Frame(panel, bg=t["bg"])
+        custom = tk.Frame(inner, bg=t["bg"])
         custom.pack(fill="x", pady=(8, 0))
         tk.Label(custom, text="Свой резолвер", font=self.font_text, bg=t["bg"], fg=t["text"],
                  anchor="w").pack(anchor="w")
@@ -1526,13 +1557,13 @@ class ProfilesWindow:
         self.dns_custom_status = self._label(custom, tone="muted")
         self.dns_custom_status.pack(fill="x")
 
-        routes = tk.Frame(panel, bg=t["bg"])
+        routes = tk.Frame(inner, bg=t["bg"])
         routes.pack(fill="x", pady=(10, 0))
         tk.Label(routes, text="DNS по маршрутам", font=self.font_title,
                  bg=t["bg"], fg=t["text"], anchor="w").pack(anchor="w")
         self.dns_routes_box = tk.Frame(routes, bg=t["bg"])
         self.dns_routes_box.pack(fill="x", pady=(2, 0))
-        self.dns_hint = self._label(panel, tone="muted")
+        self.dns_hint = self._label(inner, tone="muted")
         self.dns_hint.pack(fill="x", pady=(8, 0))
         self.dns_status = self._label(panel, tone="muted")
         self.dns_status.pack(fill="x", pady=(4, 0))
@@ -3782,12 +3813,14 @@ class CustomWarpSettings:
                                             activeforeground=t["pill_on_fg"],
                                             font=self.view.font_text)
         self.country_menu.pack(side="left")
-        self.country_edit = self.view._make_pill(country_row, "Править…", self._edit_countries,
+        buttons_row = tk.Frame(country, bg=t["bg"])
+        buttons_row.pack(fill="x", pady=(4, 0))
+        self.country_edit = self.view._make_pill(buttons_row, "Править…", self._edit_countries,
                                                  width=84)
-        self.country_edit.pack(side="left", padx=(6, 0))
-        self.country_find = self.view._make_pill(country_row, "Найти страны…",
+        self.country_edit.pack(side="left", padx=(0, 6))
+        self.country_find = self.view._make_pill(buttons_row, "Найти страны…",
                                                  self._on_discover_countries, width=122)
-        self.country_find.pack(side="left", padx=(6, 0))
+        self.country_find.pack(side="left")
         self.country_hint = tk.Label(country, text="", font=self.view.font_text, bg=t["bg"],
                                      fg=t["muted"], anchor="w", justify="left", wraplength=500)
         self.country_hint.pack(fill="x")
@@ -3860,7 +3893,8 @@ class CustomWarpSettings:
         top.update_idletasks()
         # A minimum, not a fixed size: the preset hint wraps to a different number of lines, and a
         # pinned height would clip the buttons on the longer ones (measured on the first build).
-        top.minsize(max(560, top.winfo_reqwidth(), buttons.winfo_reqwidth() + 24),
+        top.minsize(max(PROFILE_DIALOG_WIDTH, top.winfo_reqwidth(),
+                        buttons.winfo_reqwidth() + 24),
                     top.winfo_reqheight())
         self._place()
         apply_title_bar_theme(top, self.view.dark)
@@ -4291,7 +4325,8 @@ class WarpCountriesEditor:
         self.status.pack(fill="x", pady=(6, 0))
 
         top.update_idletasks()
-        top.minsize(max(520, top.winfo_reqwidth()), top.winfo_reqheight())
+        top.minsize(max(PROFILE_DIALOG_WIDTH, top.winfo_reqwidth()),
+                    top.winfo_reqheight())
         self._place()
         apply_title_bar_theme(top, self.view.dark)
         self._rebuild_list()
