@@ -120,11 +120,6 @@ DEFAULT_SOURCES = (
         "kind": KIND_VLESS,
     },
     {
-        "name": "Delta-Kronecker REALITY",
-        "url": "https://raw.githubusercontent.com/Delta-Kronecker/V2ray-Config/main/config/reality/reality.txt",
-        "kind": KIND_VLESS,
-    },
-    {
         "name": "0xRadikal VLESS",
         "url": "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/protocols/vless.txt",
         "kind": KIND_VLESS,

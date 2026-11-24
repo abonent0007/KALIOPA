@@ -176,12 +176,7 @@ MIRROR_BASES = (
     "https://cdn.jsdelivr.net/gh/center2055/OnionHop-Bridges-Collector@main/bridge/",
     "https://cdn.statically.io/gh/center2055/OnionHop-Bridges-Collector@main/bridge/",
 )
-FALLBACK_BASES = (
-    "https://raw.githubusercontent.com/Delta-Kronecker/Tor-Bridges-Collector/main/bridge/",
-    "https://cdn.jsdelivr.net/gh/Delta-Kronecker/Tor-Bridges-Collector@main/bridge/",
-)
 LIST_FILES = ("obfs4_tested.txt", "webtunnel_tested.txt", "vanilla_tested.txt")
-FALLBACK_FILE = "obfs4_tested.txt"
 MOAT_SETTINGS_URL = "https://bridges.torproject.org/moat/circumvention/settings"
 MOAT_COUNTRY = "ru"
 MOAT_TRANSPORTS = ("webtunnel", "obfs4", "snowflake")
@@ -2157,7 +2152,7 @@ class BridgeCollector:
         """
         result = {"bridges": [], "source": "", "error": "", "collected": 0, "alive": 0, "cancelled": False,
                   "builtin_alive": []}
-        list_jobs = [(name, MIRROR_BASES) for name in LIST_FILES] + [(FALLBACK_FILE, FALLBACK_BASES)]
+        list_jobs = [(name, MIRROR_BASES) for name in LIST_FILES]
         holders = [dict() for _ in list_jobs]
         moat_holder, snowflake_holder = {}, {}
 
