@@ -47,6 +47,7 @@ __all__ = [
     "note_outcome",
     "load_state",
     "load_custom_meta",
+    "load_identity",
     "discover_countries",
     "generate",
 ]
@@ -1312,6 +1313,12 @@ def _probe_exit(text: str, base_dir: str, wireproxy_path: str,
             except OSError:
                 pass
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def load_identity(base_dir: str) -> dict:
+    """Сохранённая WARP-личность без проверки пригодности: {} если её нет/битая."""
+    identity, problem = _load_identity(base_dir)
+    return identity or {}
 
 
 def discover_countries(base_dir, nova_go_path, *, log=print, limit: int = 20,

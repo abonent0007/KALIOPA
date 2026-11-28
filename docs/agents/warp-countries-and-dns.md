@@ -70,3 +70,21 @@ comss). Проверка — реальный UDP A-запрос через `nov
   Сбросить» всегда на экране; окно профилей стабильно ~900×650.
 - Стиль: dev-tools/utility, тёмная тема KALIOPA сохранена (ui-ux-pro-max,
   identity preservation).
+
+## Конструктор AWG 1.5/2.0/3.0/3.1 (1.44.2.48)
+
+Перенесён открытый генератор https://awgconfig.com (HereIamGosu/amnezia-config-gen,
+AGPL-3.0): `resources/nova_awg3.py` — профили legacy/awg2/awg3/awg31, WARP-safe
+ограничения (`S1..S4=0`, `H1..H4=1..4`, запрет RandomTrailers/HeaderProtection),
+случайные тайминги AWG 3.x, ContentPaddingAddition, CSP-протоколы
+static/sip/stun/dns/dtls/quic, цепочки I2..I5 (`<r>/<t>/<b>`) и пул
+проверенных бинарных payload Cloudflare WARP.
+
+Окно «Профили → Custom AWG → Конструктор…»: профиль, точка входа
+(авто-скан/hostname/вручную), порт, количество, IPv6, DNS, CSP-протокол,
+цепочки I2..I5, DisableCookies (только 3.1). Генерацию выполняет
+`ctx.generate_awg3`; файлы `AWG3_*.conf` падают в `profiles/Custom`, первый
+выбирается и подключается.
+
+Сети эндпоинта WARP (`nova_awg3.WARP_ENDPOINT_PREFIXES_V4/V6`) — из того же
+источника: их нельзя отдавать в AllowedIPs сплит-пресетов.

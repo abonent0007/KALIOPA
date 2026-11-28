@@ -109,6 +109,7 @@ ACTION_LABELS = {
     "generate_warp": "Сгенерировать свои",
     "generate_custom": "Сгенерировать",
     "generate_custom_settings": "Настройки…",
+    "awg_constructor": "Конструктор…",
     "issue_proton": "Выпустить профили",
     "register_masque": "Зарегистрировать",
     "reissue_warp": "Перевыпустить",
@@ -144,7 +145,7 @@ TAB_ACTION_ROWS = {
     GROUP_PROTON: (_MAIN_ROW,),
     GROUP_MASQUE: (_MAIN_ROW, ("delete",)),
     GROUP_VLESS: (_MAIN_ROW, ("import_file", "import_clipboard", "rename", "delete")),
-    GROUP_CUSTOM: (_MAIN_ROW, ("generate_custom", "generate_custom_settings", "import_file", "import_clipboard", "rename", "delete")),
+    GROUP_CUSTOM: (_MAIN_ROW, ("generate_custom", "generate_custom_settings", "awg_constructor", "import_file", "import_clipboard", "rename", "delete")),
     TAB_SUBS: (("sub_add", "sub_interval", "sub_toggle", "sub_refresh", "sub_delete"),),
     TAB_TOR: (("tor_toggle", "tor_new_identity", "tor_refresh_bridges"),),
     TAB_DNS: (("dns_test_all", "dns_apply", "dns_reset"),),
@@ -163,6 +164,7 @@ _ACTION_METHODS = {
     "folder": "_on_folder",
     "generate_custom": "_on_generate_custom",
     "generate_custom_settings": "_on_generate_custom_settings",
+    "awg_constructor": "_on_awg_constructor",
     "delete": "_on_delete",
     "rename": "_on_rename",
     "sub_add": "_on_sub_add",
@@ -3242,6 +3244,13 @@ class ProfilesWindow:
         except Exception as exc:
             self._report_error("Не удалось открыть настройки генератора", exc)
 
+    def _on_awg_constructor(self):
+        """Окно-конструктор AWG 1.5/2.0/3.0/3.1 (как awgconfig.com)."""
+        try:
+            AwgConstructorDialog(self)
+        except Exception as exc:
+            self._report_error("Не удалось открыть конструктор AWG", exc)
+
     def _on_delete(self):
         record = self._selected_record()
         if record is None:
@@ -4439,6 +4448,244 @@ class WarpCountriesEditor:
                 pass
         self.view._notice("Каталог стран сохранён", "ok")
         self.close()
+
+    def close(self):
+        if not self.alive():
+            return
+        try:
+            self.top.grab_release()
+        except tk.TclError:
+            pass
+        try:
+            self.top.destroy()
+        except tk.TclError:
+            return
+
+
+# --------------------------------------------------------------------------------------------
+# AWG constructor (как awgconfig.com)
+# --------------------------------------------------------------------------------------------
+
+
+class AwgConstructorDialog:
+    """Конструктор AWG 1.5/2.0/3.0/3.1 для Cloudflare WARP.
+
+    Локальный аналог awgconfig.com: профиль, устройство (IPv6), точка входа,
+    порт, DNS, CSP-протокол и цепочки I2..I5. Генерацию выполняет Nova через
+    `ctx.generate_awg3`; файлы падают в `profiles/Custom`.
+    """
+
+    PROFILE_LABELS = {"legacy": "AWG 1.5", "awg2": "AWG 2.0",
+                      "awg3": "AWG 3.0", "awg31": "AWG 3.1"}
+    PROTOCOL_LABELS = [("auto", "Авто"), ("static", "Static"), ("sip", "SIP"),
+                       ("stun", "STUN"), ("dns", "DNS"), ("dtls", "DTLS"),
+                       ("quic", "QUIC")]
+    ENDPOINT_LABELS = [("auto", "Авто (скан)"), ("hostname", "Hostname"),
+                       ("manual", "Вручную")]
+
+    def __init__(self, view):
+        self.view = view
+        self.top = None
+        self.entries = {}
+        self.pills = {}
+        self.values = {"mode": "awg3", "endpoint_mode": "auto",
+                       "cps_protocol": "auto"}
+        self.protocol_var = None
+        self._build()
+        try:
+            self.top.deiconify()
+            self.top.lift()
+            self.top.grab_set()
+            self.top.focus_force()
+        except tk.TclError:
+            pass
+
+    def _build(self):
+        t = self.view.theme
+        top = tk.Toplevel(self.view.win)
+        top.withdraw()
+        self.top = top
+        top.title("Конструктор AWG")
+        top.resizable(False, False)
+        top.configure(bg=t["bg"], bd=1, highlightthickness=1, highlightbackground=t["border"])
+        self.view._call_ctx_quiet("apply_window_icon", top)
+        try:
+            top.transient(self.view.win)
+        except tk.TclError:
+            pass
+        top.protocol("WM_DELETE_WINDOW", self.close)
+        top.bind("<Escape>", lambda _e: self.close())
+
+        outer = tk.Frame(top, bg=t["bg"], padx=12, pady=10)
+        outer.pack(fill="both", expand=True)
+
+        tk.Label(outer, text="Профиль", font=self.view.font_title, bg=t["bg"],
+                 fg=t["text"], anchor="w").pack(anchor="w")
+        row = tk.Frame(outer, bg=t["bg"])
+        row.pack(fill="x", pady=(2, 6))
+        for key in ("legacy", "awg2", "awg3", "awg31"):
+            pill = self.view._make_pill(row, self.PROFILE_LABELS[key],
+                                        lambda k=key: self._choose_profile(k), width=92)
+            pill.pack(side="left", padx=(0, 4))
+            self.pills[("profile", key)] = pill
+
+        tk.Label(outer, text="Точка входа", font=self.view.font_text, bg=t["bg"],
+                 fg=t["text"], anchor="w").pack(anchor="w")
+        row = tk.Frame(outer, bg=t["bg"])
+        row.pack(fill="x", pady=(2, 2))
+        for key, label in self.ENDPOINT_LABELS:
+            pill = self.view._make_pill(row, label, lambda k=key: self._choose_endpoint(k),
+                                        width=104)
+            pill.pack(side="left", padx=(0, 4))
+            self.pills[("endpoint", key)] = pill
+        self.entries["endpoint_host"] = self._entry(outer, 30, fill=True)
+
+        grid = tk.Frame(outer, bg=t["bg"])
+        grid.pack(fill="x", pady=(6, 0))
+        grid.grid_columnconfigure(1, weight=1)
+        row_index = 0
+        for key, caption, width in (("port", "Порт", 6), ("count", "Количество", 6),
+                                    ("dns", "DNS", 26)):
+            tk.Label(grid, text=caption, font=self.view.font_text, bg=t["bg"],
+                     fg=t["text"], anchor="w").grid(row=row_index, column=0, sticky="w",
+                                                   padx=(0, 6), pady=3)
+            span = 1 if key != "dns" else 2
+            self.entries[key] = self._entry(grid, width)
+            self.entries[key].grid(row=row_index, column=1, columnspan=span,
+                                   sticky="we", pady=3)
+            row_index += 1
+
+        flags = tk.Frame(outer, bg=t["bg"])
+        flags.pack(fill="x", pady=(8, 0))
+        for key, caption in (("ipv6", "IPv6"), ("extra_cps", "Цепочки I2..I5"),
+                             ("disable_cookies", "DisableCookies")):
+            pill = self.view._make_pill(flags, caption,
+                                        lambda k=key: self._toggle_flag(k), width=112)
+            pill.pack(side="left", padx=(0, 6))
+            self.pills[("flag", key)] = pill
+
+        tk.Label(outer, text="CSP-протокол (I1)", font=self.view.font_text, bg=t["bg"],
+                 fg=t["text"], anchor="w").pack(anchor="w", pady=(8, 0))
+        self.protocol_var = tk.StringVar(value="auto")
+        menu = tk.OptionMenu(outer, self.protocol_var, *[label for _k, label in self.PROTOCOL_LABELS])
+        menu.configure(font=self.view.font_text, bg=t["panel"], fg=t["text"],
+                       activebackground=t["pill_on_bg"], activeforeground=t["pill_on_fg"],
+                       highlightthickness=1, highlightbackground=t["border"],
+                       highlightcolor=t["border"], relief="flat", bd=0, anchor="w")
+        menu["menu"].configure(bg=t["panel"], fg=t["text"],
+                               activebackground=t["pill_on_bg"],
+                               activeforeground=t["pill_on_fg"], font=self.view.font_text)
+        menu.pack(anchor="w")
+
+        self.status = tk.Label(outer, text="", font=self.view.font_text, bg=t["bg"],
+                               fg=self.view._tone_color("muted"), anchor="w")
+        self.status.pack(fill="x", pady=(8, 0))
+
+        buttons = tk.Frame(outer, bg=t["bg"])
+        buttons.pack(fill="x", pady=(10, 0))
+        self.cancel_pill = self.view._make_pill(buttons, "Отмена", self.close, width=80)
+        self.cancel_pill.pack(side="right")
+        self.go_pill = self.view._make_pill(buttons, "Сгенерировать", self._on_generate, width=120)
+        self.go_pill.set_selected(True)
+        self.go_pill.pack(side="right", padx=(0, 6))
+
+        top.update_idletasks()
+        top.minsize(max(PROFILE_DIALOG_WIDTH, top.winfo_reqwidth()), top.winfo_reqheight())
+        self._place()
+        apply_title_bar_theme(top, self.view.dark)
+        nova_tooltips.attach_tree(top)
+        self._refresh()
+
+    def _entry(self, master, width, fill=False):
+        t = self.view.theme
+        entry = tk.Entry(master, width=width, font=self.view.font_text, bd=0, relief="flat",
+                         bg=t["panel"], fg=t["text"], insertbackground=t["text"],
+                         highlightthickness=1, highlightbackground=t["border"],
+                         highlightcolor=t.get("pill_on_fg", t["text"]))
+        if fill:
+            entry.pack(fill="x", pady=(2, 6))
+        return entry
+
+    def alive(self):
+        try:
+            return bool(self.top is not None and self.top.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def set_status(self, text, tone="muted"):
+        if self.alive():
+            self.status.configure(text=text, fg=self.view._tone_color(tone))
+
+    def _place(self):
+        try:
+            owner = self.view.win
+            x = owner.winfo_rootx() + max(0, (owner.winfo_width() - self.top.winfo_reqwidth()) // 2)
+            y = owner.winfo_rooty() + 60
+            self.top.geometry(f"+{max(0, x)}+{max(0, y)}")
+        except tk.TclError:
+            pass
+
+    def _refresh(self):
+        for key in ("legacy", "awg2", "awg3", "awg31"):
+            self.pills[("profile", key)].set_selected(self.values["mode"] == key)
+        for key, _label in self.ENDPOINT_LABELS:
+            self.pills[("endpoint", key)].set_selected(self.values["endpoint_mode"] == key)
+        for key in ("ipv6", "extra_cps", "disable_cookies"):
+            self.pills[("flag", key)].set_selected(bool(self.values.get(key)))
+        host = self.entries["endpoint_host"]
+        host.configure(state="normal" if self.values["endpoint_mode"] == "manual" else "disabled")
+
+    def _choose_profile(self, key):
+        self.values["mode"] = key
+        self._refresh()
+
+    def _choose_endpoint(self, key):
+        self.values["endpoint_mode"] = key
+        self._refresh()
+
+    def _toggle_flag(self, key):
+        self.values[key] = not bool(self.values.get(key))
+        self._refresh()
+
+    def _collect(self):
+        labels = {label: key for key, label in self.PROTOCOL_LABELS}
+        data = dict(self.values)
+        data["cps_protocol"] = labels.get(str(self.protocol_var.get() or ""), "auto")
+        data["port"] = self.entries["port"].get().strip()
+        data["count"] = self.entries["count"].get().strip()
+        data["dns"] = self.entries["dns"].get().strip()
+        data["endpoint_host"] = self.entries["endpoint_host"].get().strip()
+        return data
+
+    def _on_generate(self):
+        data = self._collect()
+        if data["endpoint_mode"] == "manual" and not data["endpoint_host"]:
+            self.set_status("Укажите хост точки входа", "warn")
+            return
+        fn = getattr(self.view.ctx, "generate_awg3", None)
+        if not callable(fn):
+            self.set_status("Конструктор недоступен в этой сборке", "fail")
+            return
+        results = self.view._results
+
+        def done(payload):
+            results.put((lambda value, _err: self._on_done(value), payload, None))
+
+        if not self.view._call_ctx("generate_awg3", data, done,
+                                   error_prefix="Конструктор AWG не запустился"):
+            return
+        self.set_status("Генерируем…", "muted")
+        self.view._ensure_drain()
+
+    def _on_done(self, payload):
+        result = payload if isinstance(payload, dict) else {}
+        if result.get("ok"):
+            count = int(result.get("count") or 0)
+            self.set_status(f"Готово: {count} конфигураций в Custom AWG", "ok")
+            self.view._notice(f"Конструктор AWG: создано {count}", "ok")
+            self.view.refresh_now()
+            return
+        self.set_status(result.get("reason") or "Не удалось сгенерировать", "fail")
 
     def close(self):
         if not self.alive():

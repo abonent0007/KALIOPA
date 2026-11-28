@@ -1569,6 +1569,7 @@ def build_pyinstaller_dist(base_dir: Path, release_dir: Path) -> Path:
         "--hidden-import=nova_subscriptions",
         "--hidden-import=nova_warp_countries",
         "--hidden-import=nova_dns_catalog",
+        "--hidden-import=nova_awg3",
         "--hidden-import=nova_ping",
         "--hidden-import=nova_route_spec",
         "--hidden-import=nova_captcha_window",

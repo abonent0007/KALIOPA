@@ -33803,6 +33803,84 @@ function FindProxyForURLEx(url, host) {{
                 threading.Thread(target=_worker, daemon=True,
                                  name="NovaCountries").start()
 
+            def generate_awg3(self, options, done_cb=None):
+                """Конструктор AWG 1.5/2.0/3.0/3.1: N конфигураций в Custom AWG."""
+
+                def _worker():
+                    logger = globals().get("log_print", print)
+                    result = {"ok": False, "reason": "", "count": 0, "paths": []}
+                    try:
+                        import nova_awg3
+
+                        base = get_base_dir()
+                        go = os.path.join(get_bin_dir(), "nova-go.exe")
+                        opts = nova_awg3.normalize_options(options)
+                        identity = nova_warp_generator.load_identity(base)
+                        if not identity:
+                            identity, problem = nova_warp_generator._issue_identity(
+                                base, go, _api_proxies() or None, logger, time.time())
+                            if not identity:
+                                raise RuntimeError(problem or "нет личности WARP — сначала создайте Custom WARP")
+
+                        endpoints = []
+                        if opts["endpoint_mode"] == "hostname":
+                            endpoints = [("engage.cloudflareclient.com", int(opts["port"]))]
+                        elif opts["endpoint_mode"] == "manual" and opts["endpoint_host"]:
+                            endpoints = [(opts["endpoint_host"], int(opts["port"]))]
+                        else:
+                            want = max(1, int(opts["count"]))
+                            verified, error = nova_warp_generator._collect_verified(
+                                go, identity, logger, None, want)
+                            pool = nova_warp_generator._durable_endpoints(
+                                nova_warp_generator.diversify(verified))
+                            endpoints = [(item["host"], item["port"]) for item in pool[:want]]
+                        if not endpoints:
+                            raise RuntimeError("сканер не нашёл точек входа")
+
+                        texts = nova_awg3.build_many(identity, endpoints, opts)
+                        custom_dir = os.path.join(base, "profiles", nova_profiles.GROUP_CUSTOM)
+                        os.makedirs(custom_dir, exist_ok=True)
+                        used = {name for name in os.listdir(custom_dir)
+                                if name.lower().endswith(".conf")}
+                        paths = []
+                        index = 0
+                        for text in texts:
+                            index += 1
+                            name = f"AWG3_{index:02d}.conf"
+                            while name in used:
+                                index += 1
+                                name = f"AWG3_{index:02d}.conf"
+                            target = os.path.join(custom_dir, name)
+                            tmp = target + ".tmp"
+                            with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
+                                handle.write(text)
+                            os.replace(tmp, target)
+                            used.add(name)
+                            paths.append(target)
+
+                        first = os.path.basename(paths[0])[:-len(".conf")]
+                        profile_id = f"{nova_profiles.GROUP_CUSTOM}/{first}"
+                        try:
+                            nova_profiles.save_selection(
+                                base, {"version": 1, "mode": nova_profiles.MODE_PROFILE,
+                                       "group": nova_profiles.GROUP_CUSTOM,
+                                       "profile": profile_id})
+                        except OSError:
+                            pass
+                        wm = globals().get("warp_manager")
+                        if wm is not None and _core_services_running():
+                            try:
+                                wm.apply_selection_now(f"Custom AWG: {first}")
+                            except Exception:
+                                pass
+                        result.update({"ok": True, "count": len(paths), "paths": paths})
+                    except Exception as exc:
+                        result["reason"] = f"{type(exc).__name__}: {exc}"
+                    if callable(done_cb):
+                        done_cb(result)
+
+                threading.Thread(target=_worker, daemon=True, name="NovaAwg3").start()
+
             def test_dns(self, targets, done_cb=None):
                 """Проверить резолверы реальным A-запросом; ответ приходит в done_cb."""
 
