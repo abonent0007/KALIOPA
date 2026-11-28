@@ -873,6 +873,7 @@ def require_paths(base_dir: Path) -> None:
         base_dir / "nova.pyw",
         base_dir / "icon.ico",
         base_dir / "img" / "background.png",
+        base_dir / "img" / "background2.png",
         base_dir / "NovaInstaller.iss",
         base_dir / "bin",
         base_dir / "fake",
@@ -1415,12 +1416,15 @@ def build_embedded_assets_module(base_dir: Path) -> Path:
 
     icon_b64 = base64.b64encode((base_dir / "icon.ico").read_bytes()).decode("ascii")
     bg_b64 = base64.b64encode((base_dir / "img" / "background.png").read_bytes()).decode("ascii")
+    bg2_path = base_dir / "img" / "background2.png"
+    bg2_b64 = base64.b64encode(bg2_path.read_bytes()).decode("ascii") if bg2_path.exists() else ""
 
     content = f'''# -*- coding: utf-8 -*-
 import base64
 
 _ICON_ICO_B64 = """{icon_b64}"""
 _BACKGROUND_PNG_B64 = """{bg_b64}"""
+_BACKGROUND2_PNG_B64 = """{bg2_b64}"""
 
 
 def get_icon_ico_bytes():
@@ -1429,6 +1433,10 @@ def get_icon_ico_bytes():
 
 def get_background_png_bytes():
     return base64.b64decode(_BACKGROUND_PNG_B64)
+
+
+def get_background2_png_bytes():
+    return base64.b64decode(_BACKGROUND2_PNG_B64) if _BACKGROUND2_PNG_B64 else b""
 '''
     module_path = PYI_ASSET_DIR / "embedded_assets.py"
     module_path.write_text(content, encoding="utf-8")

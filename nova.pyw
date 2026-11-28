@@ -18579,6 +18579,22 @@ function FindProxyForURLEx(url, host) {{
                    pass # Standard minimize behavior (do nothing special)
             except: pass
 
+    def on_window_close(event=None):
+        """??????? ???? (? ??? ????? ? ??????????? ????) ? ?????? ??????????? ? ????.
+
+        ?????????? ????????? ???????? ?????? ? ??????????? ???? ???? (???????),
+        ??????? ???? ????? on_closing(). ?????? ??????? ??????? on_closing() ?
+        ?????? Nova ?????? ? ????????.
+        """
+        if is_closing:
+            return
+        try:
+            root.withdraw()
+            if TRAY_SUPPORT and TRAY_ICON is None:
+                threading.Thread(target=init_tray_icon, daemon=True).start()
+        except Exception:
+            pass
+
     # Bind minimize event
     # <Unmap> is triggered when window is minimized OR hidden. We need to distinguish.
     # checking root.state() inside the event handler is the key.
@@ -32070,7 +32086,9 @@ function FindProxyForURLEx(url, host) {{
                     bg_rect = (0, 0, w, h)
             if bg_image is not None:
                 main_canvas.bg_image = bg_image
-                main_canvas.create_image(bg_rect[0], bg_rect[1], image=bg_image, anchor="nw")
+                # id элемента нужен анимации фона во время подключения
+                main_canvas.bg_item = main_canvas.create_image(bg_rect[0], bg_rect[1],
+                                                                image=bg_image, anchor="nw")
             else:
                 # Fallback: Gradient Background (Sapphire -> Yogurt)
                 # Only if running as script (.pyw)
@@ -32113,6 +32131,66 @@ function FindProxyForURLEx(url, host) {{
                         
         except Exception as e:
             print(f"[UI] Ошибка загрузки фона: {e}")
+
+        # Второй фон: его меняет анимация, пока идёт подключение. В замороженной
+        # сборке берётся из встроенных активов, иначе — из img/background2.png.
+        try:
+            if not hasattr(main_canvas, "bg_item"):
+                main_canvas.bg_image_b = None
+            else:
+                second_pil = None
+                if not getattr(sys, 'frozen', False):
+                    second_path = get_internal_path(os.path.join("img", "background2.png"))
+                    if os.path.exists(second_path):
+                        from PIL import Image as _Image
+                        second_pil = _Image.open(second_path).convert("RGB")
+                else:
+                    try:
+                        import io as _io
+                        from PIL import Image as _Image
+                        second_pil = _Image.open(_io.BytesIO(
+                            embedded_assets.get_background2_png_bytes())).convert("RGB")
+                    except Exception:
+                        second_pil = None
+                if second_pil is not None:
+                    fitted2 = second_pil.resize((bg_rect[2], bg_rect[3]), Image.LANCZOS)
+                    main_canvas.bg_image_b = ImageTk.PhotoImage(fitted2, master=root)
+                else:
+                    main_canvas.bg_image_b = None
+        except Exception as e:
+            print(f"[UI] Второй фон не загружен: {e}")
+            try:
+                main_canvas.bg_image_b = None
+            except Exception:
+                pass
+
+        # Анимация фона: каждые BACKGROUND_SWAP_MS, пока идёт подключение.
+        BACKGROUND_SWAP_MS = 3000
+        bg_animation_state = {"connecting": False, "alt": False}
+
+        def _background_animation_tick():
+            try:
+                item = getattr(main_canvas, "bg_item", None)
+                if item is not None and getattr(main_canvas, "bg_image", None) is not None:
+                    if bg_animation_state["connecting"]:
+                        if getattr(main_canvas, "bg_image_b", None) is not None:
+                            bg_animation_state["alt"] = not bg_animation_state["alt"]
+                            main_canvas.itemconfig(
+                                item, image=(main_canvas.bg_image_b
+                                             if bg_animation_state["alt"]
+                                             else main_canvas.bg_image))
+                    elif bg_animation_state["alt"]:
+                        bg_animation_state["alt"] = False
+                        main_canvas.itemconfig(item, image=main_canvas.bg_image)
+            except Exception:
+                pass
+            finally:
+                try:
+                    root.after(BACKGROUND_SWAP_MS, _background_animation_tick)
+                except Exception:
+                    pass
+
+        root.after(BACKGROUND_SWAP_MS, _background_animation_tick)
 
         # Опорные точки компоновки — углы и центр нарисованного фона, а не окна.
         # При фоне 360x270 значения совпадают со старыми; при 967x540 кнопки
@@ -33934,6 +34012,22 @@ function FindProxyForURLEx(url, host) {{
                 pass
             regions = []
 
+            # Фон меняется, только пока Nova реально подключается (та же ветка,
+            # что пишет «ПОДКЛЮЧЕНИЕ» на главному экране).
+            try:
+                if bool(warp_ok and opera_ok):
+                    bg_animation_state["connecting"] = False
+                elif globals().get("awaiting_manual_connect", False):
+                    bg_animation_state["connecting"] = False
+                elif (globals().get("has_connected_once", False)
+                      or globals().get("is_service_active", False)
+                      or float(globals().get("service_start_requested_at", 0) or 0) > 0):
+                    bg_animation_state["connecting"] = True
+                else:
+                    bg_animation_state["connecting"] = False
+            except Exception:
+                pass
+
             # Primary VPN: CF AWG, CF MASQUE, PROTON NL, AWG (Custom), CF WARP; the pending choice while down.
             vpn_text = str(vpn_label or "АВТО")
             if warp_ok:
@@ -34336,7 +34430,7 @@ function FindProxyForURLEx(url, host) {{
         # FIX: Bind minimize event here, where root is defined
         root.bind("<Unmap>", lambda e: minimize_to_tray(e) if root.state() == 'iconic' else None)
         
-        root.protocol("WM_DELETE_WINDOW", on_closing)
+        root.protocol("WM_DELETE_WINDOW", on_window_close)
         root.mainloop()
 
 except Exception as e:
